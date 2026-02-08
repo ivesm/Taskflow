@@ -69,34 +69,54 @@ def clean_database(conn: sqlite3.Connection):
         # --- Removing Duplicates ---
         # Deleting Duplicate pokemon
         try: 
-            cursor.execute("DELETE FROM pokemon WHERE id NOT IN ( SELECT MIN(id) FROM pokemon GROUP BY LOWER(name) ) ")
+            cursor.execute("DELETE FROM pokemon "
+                           "WHERE id NOT IN "
+                           "( SELECT MIN(id) "
+                           "FROM pokemon GROUP BY LOWER(name) ) "
+                        )
         except sqlite3.Error as e:
             print(f"An error occurred during database cleaning pokemon: {e}")
             conn.rollback()  # Roll back changes on error
+            return
 
         # Deleting Duplicate  types 
         try: 
-            cursor.execute("DELETE FROM types WHERE id NOT IN ( SELECT MIN(id) FROM types GROUP BY LOWER(name) )  ")
-
+            cursor.execute("DELETE FROM types "
+                           "WHERE id NOT IN "
+                           "( SELECT MIN(id) "
+                           "FROM types GROUP BY LOWER(name) ) "
+                        )
         except sqlite3.Error as e:
             print(f"An error occurred during database cleaning types: {e}")
             conn.rollback()  # Roll back changes on error
+            return
 
         # Deleting Duplicate abilities
-        try: 
-            cursor.execute("DELETE FROM abilities WHERE id NOT IN ( SELECT MIN(id) FROM abilities GROUP BY LOWER(name) )  ")
+        try:
+            cursor.execute("DELETE FROM abilities "
+                           "WHERE id NOT IN "
+                           "( SELECT MIN(id) "
+                           "FROM abilities GROUP BY LOWER(name) ) "
+                        )
 
         except sqlite3.Error as e:
             print(f"An error occurred during database cleaning abilities: {e}")
             conn.rollback()  # Roll back changes on error
+            return
 
         # Deleting Duplicate trainers
         try: 
-            cursor.execute("DELETE FROM trainers WHERE id NOT IN ( SELECT MIN(id) FROM trainers GROUP BY LOWER(name) ) ")
+            cursor.execute("DELETE FROM trainers "
+                           "WHERE id NOT IN "
+                           "( SELECT MIN(id) "
+                           "FROM trainers GROUP BY LOWER(name) ) "
+                        )
 
         except sqlite3.Error as e:
             print(f"An error occurred during database cleaning trainers: {e}")
             conn.rollback()  # Roll back changes on error
+            return
+        # --- End Removing Duplicates ---
 
         # --- Correct Misspellings ---
 
@@ -106,6 +126,172 @@ def clean_database(conn: sqlite3.Connection):
         except sqlite3.Error as e:
             print(f"An error occurred during MissSpelling Updates: {e}")
             conn.rollback()  # Roll back changes on error
+            return
+        # --- end Correct Misspellings ---
+
+        # --- Standardize case ----
+
+        #pokemon
+        try: 
+
+            #select pokemon
+            cursor.execute("SELECT id , name FROM pokemon")
+            pokemons = cursor.fetchall()
+            for pokemon in pokemons:
+                id_value = pokemon[0]    # id is the first column
+                name_value = pokemon[1] 
+                titlecase = name_value.title()
+                try: 
+                    #update pokemon
+                    cursor.execute(
+                    "UPDATE pokemon SET name = ? WHERE id = ?",
+                    (titlecase, id_value)
+                    )
+
+                except sqlite3.Error as e:
+                    print(f"An error occurred Updating Case pokemons: {e}")
+                    conn.rollback()  # Roll back changes on error
+        except sqlite3.Error as e:
+            print(f"An error occurred table pokemon Selection : {e}")
+            conn.rollback()  # Roll back changes on error
+            return
+
+        #types
+        try: 
+            #Select types
+            cursor.execute("SELECT id , name FROM types")
+            types = cursor.fetchall()
+            for typep in types:
+                id_value = typep[0]    # id is the first column
+                name_value = typep[1] 
+                titlecase = name_value.title()
+                try: 
+                    #update types
+                    cursor.execute(
+                    "UPDATE types SET name = ? WHERE id = ?",
+                    (titlecase, id_value)
+                    )
+
+                except sqlite3.Error as e:
+                    print(f"An error occurred Updating Case types: {e}")
+                    conn.rollback()  # Roll back changes on error
+                    return
+        except sqlite3.Error as e:
+            print(f"An error occurred table types Selection : {e}")
+            conn.rollback()  # Roll back changes on error
+            return
+
+        #abilities
+        try: 
+
+            #select abilities
+            cursor.execute("SELECT id , name FROM abilities")
+            abilities = cursor.fetchall()
+            for ability in abilities:
+                id_value = ability[0]    # id is the first column
+                name_value = ability[1] 
+                titlecase = name_value.title()
+                try: 
+                    #update A
+                    cursor.execute(
+                    "UPDATE abilities SET name = ? WHERE id = ?",
+                    (titlecase, id_value)
+                    )
+
+                except sqlite3.Error as e:
+                    print(f"An error occurred Updating Case abilities: {e}")
+                    conn.rollback()  # Roll back changes on error
+                    return
+
+        except sqlite3.Error as e:
+            print(f"An error occurred table Abilities Selection : {e}")
+            conn.rollback()  # Roll back changes on error
+            return
+
+        #trainers
+        try: 
+
+            #Update trainers
+            cursor.execute("SELECT id , name FROM trainers")
+            abilities = cursor.fetchall()
+            for trainer in trainers:
+                id_value = trainer[0]    # id is the first column
+                name_value = trainer[1] 
+                titlecase = name_value.title()
+                try: 
+                    cursor.execute(
+                    "UPDATE trainers SET name = ? WHERE id = ?",
+                    (titlecase, id_value)
+                    )
+
+                except sqlite3.Error as e:
+                    print(f"An error occurred Updating Case trainers: {e}")
+                    conn.rollback()  # Roll back changes on error
+                    return
+
+        except sqlite3.Error as e:
+            print(f"An error occurred table trainers Selection : {e}")
+            conn.rollback()  # Roll back changes on error
+            return
+
+        # --- End Standardize case ----
+        # --- Remove Redundant data ---
+        #pokemon
+        try: 
+            cursor.execute(
+                "DELETE FROM pokemon "
+                "WHERE TRIM(name) = '' "
+                "OR TRIM(name) = '---' "
+                "OR TRIM(name) = '???'"
+            )
+        except sqlite3.Error as e:
+            print(f"An error occurred during remove Redundant data pokemon: {e}")
+            conn.rollback()  # Roll back changes on error
+            return
+
+
+        #types
+        try: 
+            cursor.execute(
+                "DELETE FROM types "
+                "WHERE TRIM(name) = '' "
+                "OR TRIM(name) = '---' "
+                "OR TRIM(name) = '???'"
+            )
+        except sqlite3.Error as e:
+            print(f"An error occurred during remove Redundant data types: {e}")
+            conn.rollback()  # Roll back changes on error
+            return
+
+
+        #abilities
+        try: 
+            cursor.execute(
+                "DELETE FROM abilities "
+                "WHERE TRIM(name) = '' "
+                "OR TRIM(name) = '---' "
+                "OR TRIM(name) = '???'"
+            )
+        except sqlite3.Error as e:
+            print(f"An error occurred during remove Redundant data abilities: {e}")
+            conn.rollback()  # Roll back changes on error
+            return
+
+        #trainers
+        try: 
+            cursor.execute(
+                "DELETE FROM trainers "
+                "WHERE TRIM(name) = '' "
+                "OR TRIM(name) = '---' "
+                "OR TRIM(name) = '???'"
+            )
+        except sqlite3.Error as e:
+            print(f"An error occurred during remove Redundant data trainers: {e}")
+            conn.rollback()  # Roll back changes on error
+            return
+
+
+        # --- End Redundant data ---
 
 
         # --- End Implementation ---
@@ -115,6 +301,7 @@ def clean_database(conn: sqlite3.Connection):
     except sqlite3.Error as e:
         print(f"An error occurred during database cleaning: {e}")
         conn.rollback()  # Roll back changes on error
+        return
 
 # --- FastAPI Application ---
 def create_fastapi_app() -> FastAPI:
