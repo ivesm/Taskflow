@@ -23,7 +23,9 @@ def connect_db() -> Optional[sqlite3.Connection]:
     connection = None
     try:
         # --- Implement Here ---
-
+        
+        connection = sqlite3.connect(DB_NAME) # My SQLLite Connection
+        
         # --- End Implementation ---
     except sqlite3.Error as e:
         print(f"Database connection error: {e}")
@@ -45,6 +47,7 @@ def clean_database(conn: sqlite3.Connection):
     if not conn:
         print("Error: Invalid database connection provided for cleaning.")
         return
+
 
     cursor = conn.cursor()
     print("Starting database cleaning...")
@@ -134,7 +137,11 @@ if __name__ == "__main__":
     temp_conn = connect_db()
     if temp_conn:
         clean_database(temp_conn)
-        temp_conn.close()
 
-    app_instance = create_fastapi_app()
-    uvicorn.run(app_instance, host="127.0.0.1", port=8000)
+        temp_conn.close()
+        print("DB Connection Closed")
+    else :
+        print("DB Does Not Exist")
+        
+   # app_instance = create_fastapi_app()
+   # uvicorn.run(app_instance, host="127.0.0.1", port=8000)
