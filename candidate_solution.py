@@ -55,6 +55,39 @@ def clean_database(conn: sqlite3.Connection):
     try:
         # --- Implement Here ---
 
+        # --- Removing Duplicates ---
+        # Deleting Duplicate pokemon
+        try: 
+            cursor.execute("DELETE FROM pokemon WHERE id NOT IN ( SELECT MIN(id) FROM pokemon GROUP BY LOWER(name) ) ")
+        except sqlite3.Error as e:
+            print(f"An error occurred during database cleaning pokemon: {e}")
+            conn.rollback()  # Roll back changes on error
+
+        # Deleting Duplicate  types 
+        try: 
+            cursor.execute("DELETE FROM types WHERE id NOT IN ( SELECT MIN(id) FROM types GROUP BY LOWER(name) )  ")
+
+        except sqlite3.Error as e:
+            print(f"An error occurred during database cleaning types: {e}")
+            conn.rollback()  # Roll back changes on error
+
+        # Deleting Duplicate abilities
+        try: 
+            cursor.execute("DELETE FROM abilities WHERE id NOT IN ( SELECT MIN(id) FROM abilities GROUP BY LOWER(name) )  ")
+
+        except sqlite3.Error as e:
+            print(f"An error occurred during database cleaning abilities: {e}")
+            conn.rollback()  # Roll back changes on error
+
+        # Deleting Duplicate trainers
+        try: 
+            cursor.execute("DELETE FROM trainers WHERE id NOT IN ( SELECT MIN(id) FROM trainers GROUP BY LOWER(name) ) ")
+
+        except sqlite3.Error as e:
+            print(f"An error occurred during database cleaning trainers: {e}")
+            conn.rollback()  # Roll back changes on error
+
+        
         # --- End Implementation ---
         conn.commit()
         print("Database cleaning finished and changes committed.")
