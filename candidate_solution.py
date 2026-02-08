@@ -4,10 +4,21 @@ import os
 from fastapi import FastAPI, HTTPException
 from typing import List, Optional
 import uvicorn
+import httpx
+import asyncio
 
 # --- Constants ---
 DB_NAME = "pokemon_assessment.db"
+POKEMON_BASE_URL = "https://pokeapi.co/api/v2/"
 
+
+def pokemon_api_connect(api_endpoint):
+    name = ""
+
+
+    
+
+    return name
 
 # --- Database Connection ---
 def connect_db() -> Optional[sqlite3.Connection]:
@@ -48,7 +59,7 @@ def clean_database(conn: sqlite3.Connection):
         print("Error: Invalid database connection provided for cleaning.")
         return
 
-
+    return None
     cursor = conn.cursor()
     print("Starting database cleaning...")
 
@@ -87,7 +98,16 @@ def clean_database(conn: sqlite3.Connection):
             print(f"An error occurred during database cleaning trainers: {e}")
             conn.rollback()  # Roll back changes on error
 
-        
+        # --- Correct Misspellings ---
+
+        try: 
+            cursor.execute("")
+
+        except sqlite3.Error as e:
+            print(f"An error occurred during MissSpelling Updates: {e}")
+            conn.rollback()  # Roll back changes on error
+
+
         # --- End Implementation ---
         conn.commit()
         print("Database cleaning finished and changes committed.")
