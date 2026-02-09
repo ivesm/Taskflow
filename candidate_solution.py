@@ -320,7 +320,7 @@ def create_fastapi_app() -> FastAPI:
         ...,
         min_length=1,
         max_length=30,
-        regex="^[a-z-]+$",
+        regex="^[A-Za-z-]+$",
         description="Pokemon ability name (lowercase, hyphen-separated)"
     )):
         """
@@ -329,13 +329,13 @@ def create_fastapi_app() -> FastAPI:
         """
         # --- Implement here ---
     
-        conn = connect_db()
-        if conn:
-            cursor = conn.cursor()
-            try: 
-                
-                ability_name = ability_name.title()
-
+        
+        cursor = conn.cursor()
+        try: 
+            
+            ability_name = ability_name.title()
+            conn = connect_db()
+            if conn:
                 sql = """
                 SELECT  pk.name  FROM pokemon pk 
                     inner join trainer_pokemon_abilities tpa on pk.id = tpa.pokemon_id 
@@ -346,25 +346,22 @@ def create_fastapi_app() -> FastAPI:
                 rows = cursor.fetchall()
 
                 if not rows:
+                    conn.close()
                     raise HTTPException(
                         status_code=404,
-                        detail=f"No Pokémon found with ability '{ability_name}'"
+                        detail=f"No Pokémon found with ability '{ability_name}' found "
                     )
                 
-                return [row[0] for row in rows]
-            
-            except sqlite3.Error as e:
-                raise HTTPException(
-                        status_code=404,
-                        detail=f"No Pokémon found with ability '{ability_name}'"
-                    )
-                print(f"An error occurred during remove Redundant data pokemon: {e}")
-            
             conn.close()
-            
-        else :
-            print("DB Does Not Exist")
-
+            return [row[0] for row in rows]
+        
+        except sqlite3.Error as e:
+            raise HTTPException(
+                    status_code=404,
+                    detail=f"Some Unforseen  Error occured please Contact your administrator"
+                )
+        
+        
         # --- End Implementation ---
 
     @app.get("/pokemon/type/{type_name}", response_model=List[str])
