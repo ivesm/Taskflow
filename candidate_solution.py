@@ -321,21 +321,20 @@ def create_fastapi_app() -> FastAPI:
         min_length=1,
         max_length=30,
         regex="^[A-Za-z-]+$",
-        description="Pokemon ability name (lowercase, hyphen-separated)"
+        description="Pokemon ability name (Titlecase, hyphen-separated)"
     )):
         """
         Task 4: Retrieve all Pokémon names with a specific ability.
         Query the cleaned database. Handle cases where the ability doesn't exist.
         """
         # --- Implement here ---
-    
-        
-        cursor = conn.cursor()
+
         try: 
             
             ability_name = ability_name.title()
             conn = connect_db()
             if conn:
+                cursor = conn.cursor()
                 sql = """
                 SELECT  pk.name  FROM pokemon pk 
                     inner join trainer_pokemon_abilities tpa on pk.id = tpa.pokemon_id 
@@ -365,23 +364,99 @@ def create_fastapi_app() -> FastAPI:
         # --- End Implementation ---
 
     @app.get("/pokemon/type/{type_name}", response_model=List[str])
-    def get_pokemon_by_type(type_name: str):
+    def get_pokemon_by_type(type_name: str = Path(
+        ...,
+        min_length=1,
+        max_length=30,
+        regex="^[A-Za-z-]+$",
+        description="Pokemon Type name (Titlecase, hyphen-separated)"
+    )):
         """
         Task 5: Retrieve all Pokémon names of a specific type (considers type1 and type2).
         Query the cleaned database. Handle cases where the type doesn't exist.
         """
         # --- Implement here ---
+        try: 
+            
+            type_name = type_name.title()
+            conn = connect_db()
 
+            if conn:
+                cursor = conn.cursor()
+
+                sql = """
+                SELECT  pk.name  FROM pokemon pk 
+                    inner join types tp on pk.type1_id = tp.id or pk.type2_id = tp.id 
+                    where tp.name =  ? """
+            
+                cursor.execute(sql, (type_name,))
+
+                rows = cursor.fetchall()
+
+                if not rows:
+                    conn.close()
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No Pokémon found with type '{type_name}' found "
+                    )
+                
+            conn.close()
+            return [row[0] for row in rows]
+        
+        except sqlite3.Error as e:
+            raise HTTPException(
+                    status_code=404,
+                    detail=f"Some Unforseen  Error occured please Contact your administrator"
+                )
         # --- End Implementation ---
 
     @app.get("/trainers/pokemon/{pokemon_name}", response_model=List[str])
-    def get_trainers_by_pokemon(pokemon_name: str):
+    def get_trainers_by_pokemon(pokemon_name: str = Path(
+        ...,
+        min_length=1,
+        max_length=30,
+        regex="^[A-Za-z-]+$",
+        description="Pokemon name (Titlecase, hyphen-separated)"
+    )):
         """
         Task 6: Retrieve all trainer names who have a specific Pokémon.
         Query the cleaned database. Handle cases where the Pokémon doesn't exist or has no trainer.
         """
         # --- Implement here ---
 
+        try: 
+            
+            pokemon_name = pokemon_name.title()
+            conn = connect_db()
+
+            if conn:
+                cursor = conn.cursor()
+
+                sql = """
+                SELECT  tr.name  FROM trainers tr 
+                    inner join trainer_pokemon_abilities tpa on tr.id = tpa.trainer_id
+                    inner join pokemon pk on pk.id = tpa.pokemon_id  
+                    where pk.name =  ? """
+            
+                cursor.execute(sql, (pokemon_name,))
+
+                rows = cursor.fetchall()
+
+                if not rows:
+                    conn.close()
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No Pokémon found with name '{pokemon_name}' found "
+                    )
+                
+            conn.close()
+            return [row[0] for row in rows]
+        
+        except sqlite3.Error as e:
+            raise HTTPException(
+                    status_code=404,
+                    detail=f"Some Unforseen  Error occured please Contact your administrator"
+                )
         # --- End Implementation ---
 
     @app.get("/abilities/pokemon/{pokemon_name}", response_model=List[str])
