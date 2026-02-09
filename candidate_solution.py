@@ -1,7 +1,7 @@
 # candidate_solution.py
 import sqlite3
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path
 from typing import List, Optional
 import uvicorn
 import httpx
@@ -40,8 +40,7 @@ def connect_db() -> Optional[sqlite3.Connection]:
 
     return connection
 
-#getting  know  Pokemon names For spell Check 
-
+# getting all Pokemon names 
 def get_pokemon_names():
     global pokemon_pokemon
 
@@ -52,9 +51,9 @@ def get_pokemon_names():
     data = r.json()
     pokemon_pokemon = [p["name"] for p in data["results"]]
 
-    return 
-# getting all  pokemon Types
-
+    return
+ 
+# getting all pokemon types
 def get_pokemon_types():
     global pokemon_types
 
@@ -67,11 +66,11 @@ def get_pokemon_types():
 
     return 
 
-# getting all  pokemon abilities 
+# getting all pokemon abilities 
 def get_pokemon_abilities():
     global pokemon_abilities
 
-    url = f"https://pokeapi.co/api/v2/pokemon?limit=2000"
+    url = f"https://pokeapi.co/api/v2/ability?limit=500"
     r = httpx.get(url)
     r.raise_for_status()
 
@@ -83,7 +82,7 @@ def get_pokemon_abilities():
 # Delete Duplicates
 def delete_dublicates(cursor,table_name ,conn: sqlite3.Connection):
     
-    print("Start Deleting Duplicates")
+    print("Start Deleting Duplicates ", table_name)
     allowed_tables = {"pokemon", "abilities", "types","trainers"}
     if table_name not in allowed_tables:
         raise ValueError("Invalid table name")
@@ -100,11 +99,8 @@ def delete_dublicates(cursor,table_name ,conn: sqlite3.Connection):
             )"""
         
         try:
-            print("Getting here trainer_pokemon_abilities ")
-            print(sql)
             cursor.execute(sql)
             conn.commit() 
-
         except sqlite3.Error as e:
             print(f"An error occurred during database cleaning {table_name}: {e}")
             conn.rollback()
@@ -119,7 +115,6 @@ def delete_dublicates(cursor,table_name ,conn: sqlite3.Connection):
         )
         """
     try:
-        print("Getting here ")
         cursor.execute(sql)
         conn.commit() 
     except sqlite3.Error as e:
@@ -141,9 +136,9 @@ def get_spelling_suggestion(name: str , pokemon_list):
     )
 
 # Correct Spelling 
-def correct_Spelling(cursor ,table_name ,conn: sqlite3.Connection):
+def correct_spelling(cursor ,table_name ,conn: sqlite3.Connection):
 
-    print("Start  correct_misspellings ")
+    print("Start  correct_spelling ", table_name )
    #  there is no official  list   for the Correct spelling of trainers 
    #  so  we cannot fix  trainer names 
     allowed_tables = {"pokemon", "abilities", "types"}
@@ -158,18 +153,21 @@ def correct_Spelling(cursor ,table_name ,conn: sqlite3.Connection):
         cursor.execute(sql)
         names_ids = cursor.fetchall()
         for name_id in names_ids:
+            
             id_value = name_id[0]  
             name_value = name_id[1]
 
-            list_name = "pokemon_"+table_name
-            
+            list_name = "pokemon_"+table_name    
             pokemon_name = get_spelling_suggestion(name_value , globals()[list_name])
-            pokemon_name = pokemon_name[0]
+            
+            if pokemon_name:
+                pokemon_name = pokemon_name[0]
+            else : 
+                pokemon_name = name_value
 
             # update the  Spelling of the names 
             if pokemon_name !=  name_value :
                 sql_update =f"UPDATE {table_name} SET name = ? WHERE id = ?"
-                print(sql_update)
                 cursor.execute(sql_update, (pokemon_name, id_value))
                 conn.commit()
 
@@ -181,14 +179,13 @@ def correct_Spelling(cursor ,table_name ,conn: sqlite3.Connection):
     return True   
 
 def standardise_case(cursor,table_name ,conn: sqlite3.Connection): 
-    print("Start Standardise Case  table name ",table_name )
+    print("Start Standardise Case  ",table_name )
 
     allowed_tables = {"pokemon", "abilities", "types","trainers"}
     if table_name not in allowed_tables:
         raise ValueError("Invalid table name")
         return False
     
-
     sql_select = f"""
         SELECT id , name  FROM {table_name}
         """
@@ -201,7 +198,6 @@ def standardise_case(cursor,table_name ,conn: sqlite3.Connection):
             name_value = name_id[1] 
             titlecase = name_value.title()
 
-    
             try: 
                 #update table
                 sql_update =f"UPDATE {table_name} SET name = ? WHERE id = ?"
@@ -217,8 +213,10 @@ def standardise_case(cursor,table_name ,conn: sqlite3.Connection):
     print("End Standardise Case")
     return True   
 
-
+# Remove Redundant Data 
 def remove_redundant_data(cursor,table_name ,conn: sqlite3.Connection): 
+
+    print("Start remove_redundant_data ",table_name )
 
     allowed_tables = {"pokemon", "abilities", "types","trainers"}
     if table_name not in allowed_tables:
@@ -231,6 +229,7 @@ def remove_redundant_data(cursor,table_name ,conn: sqlite3.Connection):
         WHERE TRIM(name) = ''
         OR TRIM(name) = '---'
         OR TRIM(name) = '???'
+        OR name like '%Remove%'
         """
     
     try: 
@@ -241,7 +240,9 @@ def remove_redundant_data(cursor,table_name ,conn: sqlite3.Connection):
         conn.rollback()
         return False
 
+    print("end remove_redundant_data ")
     return True
+
 # --- Data Cleaning ---
 def clean_database(conn: sqlite3.Connection):
     """
@@ -269,8 +270,13 @@ def clean_database(conn: sqlite3.Connection):
              # need to Correct  Spelling before we standardise case and  remove
              # duplicates , but only  for Pokemons , types and Abilities 
 
+            # --- Remove Redundant data ---    
+            if not remove_redundant_data(cursor, db_table,conn):    
+                return
+            
+            # --- Correct Spelling 
             if db_table != "trainers" :
-                if not correct_misspellings(cursor, db_table,conn) :
+                if not correct_spelling(cursor, db_table,conn) :
                     return
         
             # --- Standardize case ----
@@ -281,11 +287,6 @@ def clean_database(conn: sqlite3.Connection):
             # --- Removing Duplicates ---
             if not delete_dublicates(cursor, db_table, conn):
                 return
-            
-            # --- Remove Redundant data ---    
-            if not remove_redundant_data(cursor, db_table):    
-                return
-
         # --- End Implementation ---
         print("Database cleaning finished and changes committed.")
 
@@ -315,37 +316,52 @@ def create_fastapi_app() -> FastAPI:
         # --- End Implementation ---
 
     @app.get("/pokemon/ability/{ability_name}", response_model=List[str])
-    def get_pokemon_by_ability(ability_name: str):
+    def get_pokemon_by_ability(ability_name: str = Path(
+        ...,
+        min_length=1,
+        max_length=30,
+        regex="^[a-z-]+$",
+        description="Pokemon ability name (lowercase, hyphen-separated)"
+    )):
         """
         Task 4: Retrieve all Pokémon names with a specific ability.
         Query the cleaned database. Handle cases where the ability doesn't exist.
         """
         # --- Implement here ---
-
-        ability_name = ability_name.strip().lower()
-        if not ability_name.replace("-", "").isalpha():
-            raise HTTPException(
-                status_code=400,
-                detail="Ability name must contain only letters and hyphens"
-            )
     
-        
         conn = connect_db()
         if conn:
             cursor = conn.cursor()
             try: 
-                cursor.execute(
-                    "DELETE FROM pokemon "
-                    "WHERE TRIM(name) = '' "
-                    "OR TRIM(name) = '---' "
-                    "OR TRIM(name) = '???'"
-                )
+                
+                ability_name = ability_name.title()
+
+                sql = """
+                SELECT  pk.name  FROM pokemon pk 
+                    inner join trainer_pokemon_abilities tpa on pk.id = tpa.pokemon_id 
+                    inner join abilities ab on tpa.ability_id = ab.id
+                    where ab.name =  ? """
+            
+                cursor.execute(sql, (ability_name,))
+                rows = cursor.fetchall()
+
+                if not rows:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No Pokémon found with ability '{ability_name}'"
+                    )
+                
+                return [row[0] for row in rows]
+            
             except sqlite3.Error as e:
+                raise HTTPException(
+                        status_code=404,
+                        detail=f"No Pokémon found with ability '{ability_name}'"
+                    )
                 print(f"An error occurred during remove Redundant data pokemon: {e}")
-                conn.rollback()
-        
+            
             conn.close()
-            print("DB Connection Closed")
+            
         else :
             print("DB Does Not Exist")
 
@@ -395,11 +411,14 @@ if __name__ == "__main__":
     temp_conn = connect_db()
     if temp_conn:
         get_pokemon_names()  
+        get_pokemon_types()
+        get_pokemon_abilities()
+
         clean_database(temp_conn)
         temp_conn.close()
         print("DB Connection Closed")
     else :
         print("DB Does Not Exist")
         
-   # app_instance = create_fastapi_app()
+    app_instance = create_fastapi_app()
    # uvicorn.run(app_instance, host="127.0.0.1", port=8000)
