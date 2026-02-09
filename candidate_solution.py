@@ -44,12 +44,34 @@ def connect_db() -> Optional[sqlite3.Connection]:
 
     return connection
 
-def delete_dublicates(cursor,table_name ):
-
+def delete_dublicates(cursor,table_name ,conn: sqlite3.Connection):
+    
+    print("Start Deleting Duplicates")
     allowed_tables = {"pokemon", "abilities", "types","trainers"}
     if table_name not in allowed_tables:
         raise ValueError("Invalid table name")
         return False
+
+    if table_name == "pokemon" :
+        # if  pokemon table whe need to  Delete  the  record   from 
+        # trainer_pokemon_abilities 
+        sql = """DELETE FROM trainer_pokemon_abilities
+                WHERE pokemon_id NOT IN (
+                    SELECT MIN(id)
+                        FROM pokemon
+                    GROUP BY LOWER(name)
+            )"""
+        
+        try:
+            print("Getting here trainer_pokemon_abilities ")
+            print(sql)
+            cursor.execute(sql)
+            conn.commit() 
+
+        except sqlite3.Error as e:
+            print(f"An error occurred during database cleaning {table_name}: {e}")
+            conn.rollback()
+            return False
 
     sql = f"""
         DELETE FROM {table_name}
@@ -59,16 +81,22 @@ def delete_dublicates(cursor,table_name ):
             GROUP BY LOWER(name)
         )
         """
+    
     try:
+        print("Getting here ")
         cursor.execute(sql)
+        conn.commit() 
     except sqlite3.Error as e:
         print(f"An error occurred during database cleaning {table_name}: {e}")
+        conn.rollback()
         return False
 
+    print("End Deleting Duplicates")
     return True 
     
-def correct_misspellings(cursor,table_name ):
+def correct_misspellings(cursor,table_name ,conn: sqlite3.Connection):
 
+    print("Start ")
     allowed_tables = {"pokemon", "abilities", "types","trainers"}
     if table_name not in allowed_tables:
         raise ValueError("Invalid table name")
@@ -91,7 +119,8 @@ def correct_misspellings(cursor,table_name ):
 
     return True   
 
-def standardise_case(cursor,table_name ):  
+def standardise_case(cursor,table_name ,conn: sqlite3.Connection): 
+    print("Start Standardise Case  table name ",table_name )
 
     allowed_tables = {"pokemon", "abilities", "types","trainers"}
     if table_name not in allowed_tables:
@@ -110,11 +139,13 @@ def standardise_case(cursor,table_name ):
             id_value = name_id[0]    # id is the first column
             name_value = name_id[1] 
             titlecase = name_value.title()
+
+    
             try: 
                 #update table
                 sql_update =f"UPDATE {table_name} SET name = ? WHERE id = ?"
                 cursor.execute(sql_update, (titlecase, id_value))
-
+                conn.commit()
             except sqlite3.Error as e:
                 print(f"An error occurred Updating Case pokemons: {e}")
                 return False
@@ -122,10 +153,11 @@ def standardise_case(cursor,table_name ):
         print(f"An error occurred table pokemon Selection : {e}")
         return False
 
+    print("End Standardise Case")
     return True   
 
 
-def remove_redundant_data(cursor,table_name ):  
+def remove_redundant_data(cursor,table_name ,conn: sqlite3.Connection): 
 
     allowed_tables = {"pokemon", "abilities", "types","trainers"}
     if table_name not in allowed_tables:
@@ -161,7 +193,6 @@ def clean_database(conn: sqlite3.Connection):
         print("Error: Invalid database connection provided for cleaning.")
         return
 
-    return None
     cursor = conn.cursor()
     print("Starting database cleaning...")
 
@@ -170,22 +201,22 @@ def clean_database(conn: sqlite3.Connection):
         db_tables = ["pokemon","types","abilities","trainers"]
 
         for db_table in db_tables:
-          
+
+            # --- Standardize case ----
+
+            if not standardise_case(cursor, db_table, conn):
+                return
+            
         # --- Removing Duplicates ---
-            if not delete_dublicates(cursor, db_table):
-                conn.rollback()  # Roll back changes on error
+            if not delete_dublicates(cursor, db_table, conn):
                 return
-       
+
+            return # TESTING 
         # --- Correct Misspellings ---
-            if not correct_misspellings(cursor, db_table):
-                conn.rollback()  # Roll back changes on error
+            if not correct_misspellings(cursor, db_table):                
                 return
 
-        # --- Standardize case ----
-
-            if not standardise_case(cursor, db_table):
-                    conn.rollback()  # Roll back changes on error
-                    return
+    
        
         # --- Remove Redundant data ---    
             if not remove_redundant_data(cursor, db_table):
@@ -193,7 +224,6 @@ def clean_database(conn: sqlite3.Connection):
                     return
 
         # --- End Implementation ---
-        conn.commit()
         print("Database cleaning finished and changes committed.")
 
     except sqlite3.Error as e:
@@ -302,7 +332,6 @@ if __name__ == "__main__":
     temp_conn = connect_db()
     if temp_conn:
         clean_database(temp_conn)
-
         temp_conn.close()
         print("DB Connection Closed")
     else :
