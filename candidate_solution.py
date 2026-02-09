@@ -6,19 +6,54 @@ from typing import List, Optional
 import uvicorn
 import httpx
 import asyncio
+from difflib import get_close_matches
 
 # --- Constants ---
 DB_NAME = "pokemon_assessment.db"
-POKEMON_BASE_URL = "https://pokeapi.co/api/v2/"
+pokemon_pokemon     = [] 
+pokemon_types       = []
+pokemon_abilities   = []
 
+#getting  know  Pokemon names For spell Check 
 
-def pokemon_api_connect(api_endpoint):
-    name = ""
+def get_pokemon_names():
+    global pokemon_pokemon
 
+    url = f"https://pokeapi.co/api/v2/pokemon?limit=2000"
+    r = httpx.get(url)
+    r.raise_for_status()
 
-    
+    data = r.json()
+    pokemon_pokemon = [p["name"] for p in data["results"]]
 
-    return name
+    return 
+# getting all  pokemon Types
+
+def get_pokemon_types():
+    global pokemon_types
+
+    url = f"https://pokeapi.co/api/v2/type/"
+    r = httpx.get(url)
+    r.raise_for_status()
+
+    data = r.json()
+    pokemon_types = [t["name"] for t in data["results"]]
+
+    return 
+
+# getting all  pokemon abilities 
+def get_pokemon_abilities():
+    global pokemon_abilities
+
+    url = f"https://pokeapi.co/api/v2/pokemon?limit=2000"
+    r = httpx.get(url)
+    r.raise_for_status()
+
+    data = r.json()
+    pokemon_abilities = [a["name"] for a in data["results"]]
+
+    return 
+
 
 # --- Database Connection ---
 def connect_db() -> Optional[sqlite3.Connection]:
@@ -94,29 +129,47 @@ def delete_dublicates(cursor,table_name ,conn: sqlite3.Connection):
     print("End Deleting Duplicates")
     return True 
     
+def suggest_pokemon(name: str , pokemon_list):
+    
+    return get_close_matches(
+        name.lower(),
+        pokemon_list,
+        n=1,          # max suggestions
+        cutoff=0.6    # similarity threshold
+    )
+
 def correct_misspellings(cursor,table_name ,conn: sqlite3.Connection):
 
-    print("Start ")
-    allowed_tables = {"pokemon", "abilities", "types","trainers"}
+   #  there is no official  list   for the Correct spelling of trainers 
+   #  so  we cannot fix  trainer names 
+    allowed_tables = {"pokemon", "abilities", "types"}
     if table_name not in allowed_tables:
         raise ValueError("Invalid table name")
         return False
-
-   # sql = f"""
-   #     DELETE FROM {table_name}
-   #     WHERE id NOT IN (
-   #         SELECT MIN(id)
-   #         FROM {table_name}
-   #         GROUP BY LOWER(name)
-    #    )
-    #    """
+   
+    sql = f"""
+        SELECT id , name  FROM {table_name}
+        """
     try:
-        #cursor.execute(sql)
-        return True 
+        cursor.execute(sql)
+        names_ids = cursor.fetchall()
+        for name_id in names_ids:
+            id_value = name_id[0]  
+            name_value = name_id[1]
+
+            list_name = "pokemon_"+table_name
+            pokemon_name = suggest_pokemon(name_value , globals()[list_name])
+
+            if pokemon_name !=  name_value :
+                sql_update =f"UPDATE {table_name} SET name = ? WHERE id = ?"
+                cursor.execute(sql_update, (pokemon_name, id_value))
+                conn.commit()
+
     except sqlite3.Error as e:
         print(f"An error occurred during database cleaning {table_name}: {e}")
         return False
 
+    print("End  correct_misspellings ")
     return True   
 
 def standardise_case(cursor,table_name ,conn: sqlite3.Connection): 
@@ -174,8 +227,10 @@ def remove_redundant_data(cursor,table_name ,conn: sqlite3.Connection):
     
     try: 
         cursor.execute(sql)
+        conn.commit()
     except sqlite3.Error as e:
         print(f"An error occurred during remove Redundant data pokemon: {e}")
+        conn.rollback()
         return False
 
     return True
@@ -189,6 +244,7 @@ def clean_database(conn: sqlite3.Connection):
     - Correct known misspellings (e.g., 'Pikuchu' -> 'Pikachu', 'gras' -> 'Grass', etc.).
     - Standardize casing (e.g., 'fire' -> 'Fire' or all lowercase for names/types/abilities).
     """
+
     if not conn:
         print("Error: Invalid database connection provided for cleaning.")
         return
@@ -199,7 +255,6 @@ def clean_database(conn: sqlite3.Connection):
     try:
         # --- Implement Here ---
         db_tables = ["pokemon","types","abilities","trainers"]
-
         for db_table in db_tables:
 
             # --- Standardize case ----
@@ -207,21 +262,23 @@ def clean_database(conn: sqlite3.Connection):
             if not standardise_case(cursor, db_table, conn):
                 return
             
-        # --- Removing Duplicates ---
+             # --- Correct Misspellings ---
+             # need to Correct  Spelling before we remove Duplicates 
+            if not -correct_misspellings(cursor, db_table,conn):                
+                return
+            
+
+            return # TESTING 
+            # --- Removing Duplicates ---
             if not delete_dublicates(cursor, db_table, conn):
                 return
 
-            return # TESTING 
-        # --- Correct Misspellings ---
-            if not correct_misspellings(cursor, db_table):                
-                return
+            
+            
 
-    
-       
-        # --- Remove Redundant data ---    
-            if not remove_redundant_data(cursor, db_table):
-                    conn.rollback()  # Roll back changes on error
-                    return
+            # --- Remove Redundant data ---    
+            if not remove_redundant_data(cursor, db_table):    
+                return
 
         # --- End Implementation ---
         print("Database cleaning finished and changes committed.")
@@ -331,6 +388,7 @@ if __name__ == "__main__":
     # Ensure data is cleaned before running the app for testing
     temp_conn = connect_db()
     if temp_conn:
+        get_pokemon_names()  
         clean_database(temp_conn)
         temp_conn.close()
         print("DB Connection Closed")
