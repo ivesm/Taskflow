@@ -14,6 +14,32 @@ pokemon_pokemon     = []
 pokemon_types       = []
 pokemon_abilities   = []
 
+
+
+# --- Database Connection ---
+def connect_db() -> Optional[sqlite3.Connection]:
+    """
+    Task 1: Connect to the SQLite database.
+    Implement the connection logic and return the connection object.
+    Return None if connection fails.
+    """
+    if not os.path.exists(DB_NAME):
+        print(f"Error: Database file '{DB_NAME}' not found.")
+        return None
+
+    connection = None
+    try:
+        # --- Implement Here ---
+        
+        connection = sqlite3.connect(DB_NAME) # My SQLLite Connection
+        
+        # --- End Implementation ---
+    except sqlite3.Error as e:
+        print(f"Database connection error: {e}")
+        return None
+
+    return connection
+
 #getting  know  Pokemon names For spell Check 
 
 def get_pokemon_names():
@@ -54,31 +80,7 @@ def get_pokemon_abilities():
 
     return 
 
-
-# --- Database Connection ---
-def connect_db() -> Optional[sqlite3.Connection]:
-    """
-    Task 1: Connect to the SQLite database.
-    Implement the connection logic and return the connection object.
-    Return None if connection fails.
-    """
-    if not os.path.exists(DB_NAME):
-        print(f"Error: Database file '{DB_NAME}' not found.")
-        return None
-
-    connection = None
-    try:
-        # --- Implement Here ---
-        
-        connection = sqlite3.connect(DB_NAME) # My SQLLite Connection
-        
-        # --- End Implementation ---
-    except sqlite3.Error as e:
-        print(f"Database connection error: {e}")
-        return None
-
-    return connection
-
+# Delete Duplicates
 def delete_dublicates(cursor,table_name ,conn: sqlite3.Connection):
     
     print("Start Deleting Duplicates")
@@ -116,7 +118,6 @@ def delete_dublicates(cursor,table_name ,conn: sqlite3.Connection):
             GROUP BY LOWER(name)
         )
         """
-    
     try:
         print("Getting here ")
         cursor.execute(sql)
@@ -129,7 +130,8 @@ def delete_dublicates(cursor,table_name ,conn: sqlite3.Connection):
     print("End Deleting Duplicates")
     return True 
     
-def suggest_pokemon(name: str , pokemon_list):
+# get Spelling Suggestion
+def get_spelling_suggestion(name: str , pokemon_list):
     
     return get_close_matches(
         name.lower(),
@@ -138,8 +140,10 @@ def suggest_pokemon(name: str , pokemon_list):
         cutoff=0.6    # similarity threshold
     )
 
-def correct_misspellings(cursor,table_name ,conn: sqlite3.Connection):
+# Correct Spelling 
+def correct_Spelling(cursor ,table_name ,conn: sqlite3.Connection):
 
+    print("Start  correct_misspellings ")
    #  there is no official  list   for the Correct spelling of trainers 
    #  so  we cannot fix  trainer names 
     allowed_tables = {"pokemon", "abilities", "types"}
@@ -158,15 +162,19 @@ def correct_misspellings(cursor,table_name ,conn: sqlite3.Connection):
             name_value = name_id[1]
 
             list_name = "pokemon_"+table_name
-            pokemon_name = suggest_pokemon(name_value , globals()[list_name])
+            
+            pokemon_name = get_spelling_suggestion(name_value , globals()[list_name])
+            pokemon_name = pokemon_name[0]
 
+            # update the  Spelling of the names 
             if pokemon_name !=  name_value :
                 sql_update =f"UPDATE {table_name} SET name = ? WHERE id = ?"
+                print(sql_update)
                 cursor.execute(sql_update, (pokemon_name, id_value))
                 conn.commit()
 
     except sqlite3.Error as e:
-        print(f"An error occurred during database cleaning {table_name}: {e}")
+        print(f"An error occurred during Spelling Fix cleaning {table_name}: {e}")
         return False
 
     print("End  correct_misspellings ")
@@ -256,26 +264,24 @@ def clean_database(conn: sqlite3.Connection):
         # --- Implement Here ---
         db_tables = ["pokemon","types","abilities","trainers"]
         for db_table in db_tables:
+            
+             # --- Correct Misspellings ---
+             # need to Correct  Spelling before we standardise case and  remove
+             # duplicates , but only  for Pokemons , types and Abilities 
 
+            if db_table != "trainers" :
+                if not correct_misspellings(cursor, db_table,conn) :
+                    return
+        
             # --- Standardize case ----
 
             if not standardise_case(cursor, db_table, conn):
                 return
             
-             # --- Correct Misspellings ---
-             # need to Correct  Spelling before we remove Duplicates 
-            if not -correct_misspellings(cursor, db_table,conn):                
-                return
-            
-
-            return # TESTING 
             # --- Removing Duplicates ---
             if not delete_dublicates(cursor, db_table, conn):
                 return
-
             
-            
-
             # --- Remove Redundant data ---    
             if not remove_redundant_data(cursor, db_table):    
                 return
