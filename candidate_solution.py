@@ -175,6 +175,39 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
             conn.rollback()
             return False
 
+    if table_name == "trainers" :
+        #We need to  first  fix the  mapping  for trainer_pokemon_abilities 
+        #before we can delete Duplicates
+       
+        sql = f"""
+        SELECT d.id AS duplicate_id, m.min_id
+            FROM {table_name} d
+            JOIN (
+                SELECT LOWER(name) AS lname, MIN(id) AS min_id
+                FROM {table_name}
+                GROUP BY LOWER(name)
+            ) m
+            ON LOWER(d.name) = m.lname
+            WHERE d.id != m.min_id;
+        """
+        try:
+            cursor.execute(sql)
+
+            abilitiy_ids = cursor.fetchall()
+            for duplicate_id, min_id in abilitiy_ids:
+                sql = """
+                UPDATE trainer_pokemon_abilities
+                SET trainer_id = ?
+                WHERE trainer_id = ?
+                """
+                cursor.execute(sql, (min_id, duplicate_id))
+                conn.commit()
+
+        except sqlite3.Error as e:
+            print(f"An error occurred during database cleaning {table_name}: {e}")
+            conn.rollback()
+            return False
+        
     if table_name == "types" :
         #We need to  first  fix the  mapping  for trainer_pokemon_abilities 
         #before we can delete Duplicates
@@ -693,7 +726,7 @@ def create_fastapi_app() -> FastAPI:
             
                 #Checking if abilities  exist if not  add ability
                 for ability in pokemon_data["abilities"]:
-                    print(f"Ability  :  {ability['name'].title()}")
+                    
                     sql = """
                         SELECT  ab.id , ab.name  FROM abilities ab
                         where ab.name =  ? """
