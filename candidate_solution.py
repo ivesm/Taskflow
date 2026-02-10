@@ -38,7 +38,7 @@ def connect_db() -> Optional[sqlite3.Connection]:
 
     return connection
 
-
+# This function Retrieves all of the  data for any  pokemon that  Exists 
 def get_pokemon_data(pokemon_name:str):
     
     url = f"https://pokeapi.co/api/v2/pokemon/{pokemon_name.lower()}"
@@ -78,7 +78,7 @@ def get_pokemon_data(pokemon_name:str):
 def get_pokemon_names():
     global pokemon_pokemon
 
-    url = f"https://pokeapi.co/api/v2/pokemon?limit=2000"
+    url = f"https://pokeapi.co/api/v2/pokemon?limit=500"
     
     r = httpx.get(url)
     r.raise_for_status()
@@ -92,7 +92,7 @@ def get_pokemon_names():
 def get_pokemon_types():
     global pokemon_types
 
-    url = f"https://pokeapi.co/api/v2/type/"
+    url = f"https://pokeapi.co/api/v2/type?limit=500"
     r = httpx.get(url)
     r.raise_for_status()
 
@@ -105,7 +105,7 @@ def get_pokemon_types():
 def get_pokemon_abilities():
     global pokemon_abilities
 
-    url = f"https://pokeapi.co/api/v2/ability?limit=500"
+    url = f"https://pokeapi.co/api/v2/ability?limit=1000"
     r = httpx.get(url)
     r.raise_for_status()
 
@@ -142,6 +142,7 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
             conn.rollback()
             return False
         
+    # Fix Abilities mapping
     if table_name == "abilities" :
         #We need to  first  fix the  mapping  for trainer_pokemon_abilities 
         #before we can delete Duplicates
@@ -175,6 +176,7 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
             conn.rollback()
             return False
 
+    # Fix trainers mapping
     if table_name == "trainers" :
         #We need to  first  fix the  mapping  for trainer_pokemon_abilities 
         #before we can delete Duplicates
@@ -193,8 +195,8 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
         try:
             cursor.execute(sql)
 
-            abilitiy_ids = cursor.fetchall()
-            for duplicate_id, min_id in abilitiy_ids:
+            trainer_ids = cursor.fetchall()
+            for duplicate_id, min_id in trainer_ids:
                 sql = """
                 UPDATE trainer_pokemon_abilities
                 SET trainer_id = ?
@@ -208,6 +210,7 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
             conn.rollback()
             return False
         
+    # Fixing types mapping    
     if table_name == "types" :
         #We need to  first  fix the  mapping  for trainer_pokemon_abilities 
         #before we can delete Duplicates
@@ -241,6 +244,7 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
             conn.rollback()
             return False
 
+    # And  now we can Delete the Dullicates from the tables 
     sql = f"""
         DELETE FROM {table_name}
         WHERE id NOT IN (
@@ -271,11 +275,12 @@ def get_spelling_suggestion(name: str , pokemon_list):
     )
 
 # Correct Spelling 
+#  there is no official  list   for the Correct spelling of trainers 
+#  so  we cannot fix  trainer names 
 def correct_spelling(cursor ,table_name ,conn: sqlite3.Connection):
 
     print("Start  correct_spelling ", table_name )
-   #  there is no official  list   for the Correct spelling of trainers 
-   #  so  we cannot fix  trainer names 
+  
     allowed_tables = {"pokemon", "abilities", "types"}
     if table_name not in allowed_tables:
         raise ValueError("Invalid table name")
@@ -287,11 +292,11 @@ def correct_spelling(cursor ,table_name ,conn: sqlite3.Connection):
     try:
         cursor.execute(sql)
         names_ids = cursor.fetchall()
-        for name_id in names_ids:
-            
+        for name_id in names_ids:            
             id_value = name_id[0]  
             name_value = name_id[1]
 
+            #retrieving  Supposed  Correct  Spelling 
             list_name = "pokemon_"+table_name    
             pokemon_name = get_spelling_suggestion(name_value , globals()[list_name])
             
@@ -313,6 +318,8 @@ def correct_spelling(cursor ,table_name ,conn: sqlite3.Connection):
     print("End  correct_misspellings ")
     return True   
 
+# Standardise the case   for  the names in the tables 
+# All names Should  be Title case 
 def standardise_case(cursor,table_name ,conn: sqlite3.Connection): 
     print("Start Standardise Case  ",table_name )
 
@@ -364,9 +371,9 @@ def remove_redundant_data(cursor,table_name ,conn: sqlite3.Connection):
         WHERE TRIM(name) = ''
         OR TRIM(name) = '---'
         OR TRIM(name) = '???'
-        OR name like '%Remove%'
+        OR name like '%Remove%' 
         """
-    
+    # OR name like '%Remove%'   only because  Abilites has a Remove this ability Record
     try: 
         cursor.execute(sql)
         conn.commit()
@@ -397,6 +404,8 @@ def clean_database(conn: sqlite3.Connection):
     print("Starting database cleaning...")
 
     try:
+        # Retrieving pokemon data used  for Cleaning data 
+
         get_pokemon_names()  
         get_pokemon_types()
         get_pokemon_abilities()
@@ -405,10 +414,6 @@ def clean_database(conn: sqlite3.Connection):
         db_tables = ["pokemon","types","abilities","trainers"]
         for db_table in db_tables:
             
-             # --- Correct Misspellings ---
-             # need to Correct  Spelling before we standardise case and  remove
-             # duplicates , but only  for Pokemons , types and Abilities 
-
             # --- Remove Redundant data ---    
             if not remove_redundant_data(cursor, db_table,conn):    
                 return
