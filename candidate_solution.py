@@ -778,5 +778,5 @@ if __name__ == "__main__":
     else :
         print("DB Does Not Exist")
         
-    #app_instance = create_fastapi_app()
-    #uvicorn.run(app_instance, host="127.0.0.1", port=8000)
+    app_instance = create_fastapi_app()
+    uvicorn.run(app_instance, host="127.0.0.1", port=8000)
