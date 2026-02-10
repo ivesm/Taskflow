@@ -14,8 +14,6 @@ pokemon_pokemon     = []
 pokemon_types       = []
 pokemon_abilities   = []
 
-
-
 # --- Database Connection ---
 def connect_db() -> Optional[sqlite3.Connection]:
     """
@@ -40,11 +38,49 @@ def connect_db() -> Optional[sqlite3.Connection]:
 
     return connection
 
+
+def get_pokemon_data(pokemon_name:str):
+    
+    url = f"https://pokeapi.co/api/v2/pokemon/{pokemon_name.lower()}"
+   
+    try:
+        r = httpx.get(url, timeout=10)
+        r.raise_for_status()
+    except httpx.HTTPStatusError:
+        raise ValueError(f"Pokemon '{pokemon_name}' not found")
+    except httpx.RequestError as e:
+        raise ConnectionError(f"Network error: {e}")
+
+    data = r.json()
+
+    pokemon_data = {
+        "id": data["id"],
+        "name": data["name"],
+        # types in order (primary, secondary)
+        "types": [
+            t["type"]["name"]
+            for t in sorted(data["types"], key=lambda x: x["slot"])
+        ],
+
+        # abilities
+        "abilities": [
+            {
+                "name": a["ability"]["name"],
+                "is_hidden": a["is_hidden"]
+            }
+            for a in data["abilities"]
+        ]
+    }
+
+    return pokemon_data
+
+
 # getting all Pokemon names 
 def get_pokemon_names():
     global pokemon_pokemon
 
     url = f"https://pokeapi.co/api/v2/pokemon?limit=2000"
+    
     r = httpx.get(url)
     r.raise_for_status()
 
@@ -312,7 +348,7 @@ def create_fastapi_app() -> FastAPI:
         Return a simple JSON response object that contains a `message` key with any corresponding value.
         """
         # --- Implement here ---
-        return {"message": "Pokemon Assessment API"}
+        return {"message": "Pokemon Assessment API - Basic"}
         # --- End Implementation ---
 
     @app.get("/pokemon/ability/{ability_name}", response_model=List[str])
@@ -406,7 +442,7 @@ def create_fastapi_app() -> FastAPI:
         except sqlite3.Error as e:
             raise HTTPException(
                     status_code=404,
-                    detail=f"Some Unforseen  Error occured please Contact your administrator"
+                    detail=f"Some Unforseen Error occured please contact your administrator"
                 )
         # --- End Implementation ---
 
@@ -446,7 +482,58 @@ def create_fastapi_app() -> FastAPI:
                     conn.close()
                     raise HTTPException(
                         status_code=404,
-                        detail=f"No Pokémon found with name '{pokemon_name}' found "
+                        detail=f"No Trainer names found for pokemon named '{pokemon_name}' found "
+                    )
+                
+            conn.close()
+            return [row[0] for row in rows]
+        
+        except sqlite3.Error as e:
+            raise HTTPException(
+                    status_code=404,
+                    detail=f"Some Unforseen Error occured please contact your administrator"
+                )
+        # --- End Implementation ---
+
+  
+        # --- Implement here ---
+
+    @app.get("/abilities/pokemon/{pokemon_name}", response_model=List[str])
+    def get_abilities_by_pokemon(pokemon_name: str = Path(
+        ...,
+        min_length=1,
+        max_length=30,
+        regex="^[A-Za-z-]+$",
+        description="Pokemon name (Titlecase, hyphen-separated)"
+    )):
+        
+        """
+        Task 7: Retrieve all ability names of a specific Pokémon.
+        Query the cleaned database. Handle cases where the Pokémon doesn't exist.
+        """
+        try: 
+            
+            pokemon_name = pokemon_name.title()
+            conn = connect_db()
+
+            if conn:
+                cursor = conn.cursor()
+
+                sql = """
+                SELECT  ab.name  FROM abilities ab 
+                    inner join trainer_pokemon_abilities tpa on ab.id = tpa.ability_id
+                    inner join pokemon pk on pk.id = tpa.pokemon_id  
+                    where pk.name =  ? """
+            
+                cursor.execute(sql, (pokemon_name,))
+
+                rows = cursor.fetchall()
+
+                if not rows:
+                    conn.close()
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No Abilities found for pokemon named '{pokemon_name}' found "
                     )
                 
             conn.close()
@@ -459,18 +546,52 @@ def create_fastapi_app() -> FastAPI:
                 )
         # --- End Implementation ---
 
-    @app.get("/abilities/pokemon/{pokemon_name}", response_model=List[str])
-    def get_abilities_by_pokemon(pokemon_name: str):
-        """
-        Task 7: Retrieve all ability names of a specific Pokémon.
-        Query the cleaned database. Handle cases where the Pokémon doesn't exist.
-        """
-        # --- Implement here ---
-
-        # --- End Implementation ---
-
     # --- Implement Task 8 here ---
+    
+    @app.post("/pokemon/{pokemon_name}/trainer/{trainer_name}")
+    def add_pokemon(pokemon_name: str = Path(
+        ...,
+        min_length=1,
+        max_length=30,
+        regex="^[A-Za-z-]+$",
+        description="Pokemon name (Titlecase, hyphen-separated)"
+    ), trainer_name: str = Path(
+        ...,
+        min_length=1,
+        max_length=30,
+        regex="^[A-Za-z-]+$",
+        description="Pokemon name (Titlecase, hyphen-separated)"
+    )):
+        
+        try:     
+            pokemon_name = pokemon_name.title()
+            trainer_name = trainer_name.title() 
+            
+            conn = connect_db()
 
+            if conn:
+                cursor = conn.cursor()
+        
+                sql = """
+                    SELECT  ap.name  FROM pokemon pk 
+                    where pk.name =  ? """
+                cursor.execute(sql, (pokemon_name,))
+
+                existing = cursor.fetchone()
+
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Pokemon already exists"
+                    )
+        
+               
+        except sqlite3.Error as e:
+            raise HTTPException(
+                    status_code=404,
+                    detail=f"Some Unforseen  Error occured please Contact your administrator"
+                )
+        return {"message": "Successfully added"}
     # --- End Implementation ---
 
     print("FastAPI app created successfully.")
