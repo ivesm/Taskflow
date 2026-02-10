@@ -119,6 +119,7 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
     
     print("Start Deleting Duplicates ", table_name)
     allowed_tables = {"pokemon", "abilities", "types","trainers"}
+    
     if table_name not in allowed_tables:
         raise ValueError("Invalid table name")
         return False
@@ -192,15 +193,7 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
         try:
             cursor.execute(sql)
             type_ids = cursor.fetchall()
-            for duplicate_id, min_id in type_ids:
-                sql = """
-                UPDATE trainer_pokemon_abilities
-                SET type_id = ?
-                WHERE type_id = ?
-                """
-                cursor.execute(sql, (min_id, duplicate_id))
-                conn.commit()
-
+            for duplicate_id, min_id in type_ids:    
                 sql = """
                 UPDATE pokemon
                 SET
@@ -785,5 +778,5 @@ if __name__ == "__main__":
     else :
         print("DB Does Not Exist")
         
-    app_instance = create_fastapi_app()
-    uvicorn.run(app_instance, host="127.0.0.1", port=8000)
+    #app_instance = create_fastapi_app()
+    #uvicorn.run(app_instance, host="127.0.0.1", port=8000)
