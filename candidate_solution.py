@@ -584,7 +584,7 @@ def create_fastapi_app() -> FastAPI:
                 cursor = conn.cursor()
         
                 sql = """
-                    SELECT  ap.name  FROM pokemon pk 
+                    SELECT  pk.name  FROM pokemon pk 
                     where pk.name =  ? """
                 cursor.execute(sql, (pokemon_name,))
 
@@ -598,7 +598,7 @@ def create_fastapi_app() -> FastAPI:
 
                 pokemon_data = get_pokemon_data(pokemon_name.lower())
 
-                if not pokemon_data :
+                if not pokemon_data :                    
                     raise HTTPException(
                         status_code=404,
                         detail=f"No pokemon named '{pokemon_name.title()}' found "
@@ -626,9 +626,7 @@ def create_fastapi_app() -> FastAPI:
                             """
                             cursor.execute(sql, (pokemon_types.title(),))
                             typelist.append(cursor.lastrowid) 
-                    
-                    conn.commit() 
-
+                
                     #Checking if abilities  exist if not  add ability
                     for ability in pokemon_data["abilities"]:
                         print(f"Ability  :  {ability['name'].title()}")
@@ -646,8 +644,7 @@ def create_fastapi_app() -> FastAPI:
                             """
                             cursor.execute(sql, (ability['name'].title(),))
                             abilitylist.append(cursor.lastrowid) 
-                    conn.commit() 
-                        
+                    
                     #check  if trainer exist if not add trainer
                     sql = """
                             SELECT  tr.id , tr.name  FROM trainers tr
@@ -661,10 +658,8 @@ def create_fastapi_app() -> FastAPI:
                         sql = """
                         INSERT INTO trainers (name) VALUES (?)
                         """
-                        cursor.execute(sql, (trainer_name))
+                        cursor.execute(sql, (trainer_name,))
                         trainer_id = cursor.lastrowid
-
-                    conn.commit() 
                     
                     # now we can Add the pokemon 
                     type1 = typelist[0] if len(typelist) > 0 else None
@@ -675,22 +670,33 @@ def create_fastapi_app() -> FastAPI:
                         """
                     cursor.execute(sql, (pokemon_name,type1,type2 ))
                     pokemon_id = cursor.lastrowid
-                    conn.commit() 
-
+                
                     #inserting trainer_pokemon_abilities
                     for abilityID in abilitylist:
                         sql = """
-                        INSERT INTO trainer_pokemon_abilities 
+                        INSERT OR IGNORE INTO trainer_pokemon_abilities 
                         (pokemon_id , trainer_id , ability_id ) VALUES (?,?,?)
                         """
                         cursor.execute(sql, (pokemon_id,trainer_id,abilityID))
-                        conn.commit() 
 
+            if conn:
+                 conn.commit()          
+        except HTTPException:
+            if conn:
+                conn.rollback()
+            raise
         except sqlite3.Error as e:
-            raise HTTPException(
+             if conn:
+                conn.rollback()
+                raise HTTPException(
                     status_code=500,
                     detail=f"Some Unforseen  Error occured please Contact your administrator"
                 )
+        finally:
+            if conn:
+                conn.close()
+
+
         return {"message": "Successfully added"}
     # --- End Implementation ---
 
