@@ -140,6 +140,80 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
             print(f"An error occurred during database cleaning {table_name}: {e}")
             conn.rollback()
             return False
+        
+    if table_name == "abilities" :
+        #We need to  first  fix the  mapping  for trainer_pokemon_abilities 
+        #before we can delete Duplicates
+       
+        sql = f"""
+        SELECT d.id AS duplicate_id, m.min_id
+            FROM {table_name} d
+            JOIN (
+                SELECT LOWER(name) AS lname, MIN(id) AS min_id
+                FROM {table_name}
+                GROUP BY LOWER(name)
+            ) m
+            ON LOWER(d.name) = m.lname
+            WHERE d.id != m.min_id;
+        """
+        try:
+            cursor.execute(sql)
+
+            abilitiy_ids = cursor.fetchall()
+            for duplicate_id, min_id in abilitiy_ids:
+                sql = """
+                UPDATE trainer_pokemon_abilities
+                SET ability_id = ?
+                WHERE ability_id = ?
+                """
+                cursor.execute(sql, (min_id, duplicate_id))
+                conn.commit()
+
+        except sqlite3.Error as e:
+            print(f"An error occurred during database cleaning {table_name}: {e}")
+            conn.rollback()
+            return False
+
+    if table_name == "types" :
+        #We need to  first  fix the  mapping  for trainer_pokemon_abilities 
+        #before we can delete Duplicates
+        sql = f"""
+            SELECT d.id AS duplicate_id, m.min_id
+                FROM {table_name} d
+                JOIN (
+                    SELECT LOWER(name) AS lname, MIN(id) AS min_id
+                    FROM {table_name}
+                    GROUP BY LOWER(name)
+                ) m
+                ON LOWER(d.name) = m.lname
+                WHERE d.id != m.min_id;
+            """
+        
+        try:
+            cursor.execute(sql)
+            type_ids = cursor.fetchall()
+            for duplicate_id, min_id in type_ids:
+                sql = """
+                UPDATE trainer_pokemon_abilities
+                SET type_id = ?
+                WHERE type_id = ?
+                """
+                cursor.execute(sql, (min_id, duplicate_id))
+                conn.commit()
+
+                sql = """
+                UPDATE pokemon
+                SET
+                    type1_id = CASE WHEN type1_id = ? THEN ? ELSE type1_id END,
+                    type2_id = CASE WHEN type2_id = ? THEN ? ELSE type2_id END
+                """
+                cursor.execute(sql, (duplicate_id, min_id, duplicate_id, min_id))
+                conn.commit()
+
+        except sqlite3.Error as e:
+            print(f"An error occurred during database cleaning {table_name}: {e}")
+            conn.rollback()
+            return False
 
     sql = f"""
         DELETE FROM {table_name}
@@ -359,7 +433,7 @@ def create_fastapi_app() -> FastAPI:
         ...,
         min_length=1,
         max_length=30,
-        regex="^[A-Za-z-]+$",
+        pattern="^[A-Za-z-]+$",
         description="Pokemon ability name (Titlecase, hyphen-separated)"
     )):
         """
@@ -409,7 +483,7 @@ def create_fastapi_app() -> FastAPI:
         ...,
         min_length=1,
         max_length=30,
-        regex="^[A-Za-z-]+$",
+        pattern="^[A-Za-z-]+$",
         description="Pokemon Type name (Titlecase, hyphen-separated)"
     )):
         """
@@ -460,7 +534,7 @@ def create_fastapi_app() -> FastAPI:
         ...,
         min_length=1,
         max_length=30,
-        regex="^[A-Za-z-]+$",
+        pattern="^[A-Za-z-]+$",
         description="Pokemon name (Titlecase, hyphen-separated)"
     )):
         """
@@ -514,7 +588,7 @@ def create_fastapi_app() -> FastAPI:
         ...,
         min_length=1,
         max_length=30,
-        regex="^[A-Za-z-]+$",
+        pattern="^[A-Za-z-]+$",
         description="Pokemon name (Titlecase, hyphen-separated)"
     )):
         
@@ -564,13 +638,13 @@ def create_fastapi_app() -> FastAPI:
         ...,
         min_length=1,
         max_length=30,
-        regex="^[A-Za-z-]+$",
+        pattern="^[A-Za-z-]+$",
         description="Pokemon name (Titlecase, hyphen-separated)"
     ), trainer_name: str = Path(
         ...,
         min_length=1,
         max_length=30,
-        regex="^[A-Za-z-]+$",
+        pattern="^[A-Za-z-]+$",
         description="Pokemon name (Titlecase, hyphen-separated)"
     )):
         
@@ -582,10 +656,8 @@ def create_fastapi_app() -> FastAPI:
 
             if conn:
                 cursor = conn.cursor()
-        
-                sql = """
-                    SELECT  pk.name  FROM pokemon pk 
-                    where pk.name =  ? """
+                conn.execute("BEGIN")
+                sql = """ SELECT id FROM pokemon WHERE name = ?"""
                 cursor.execute(sql, (pokemon_name,))
 
                 existing = cursor.fetchone()
@@ -595,109 +667,107 @@ def create_fastapi_app() -> FastAPI:
                         status_code=409,
                         detail="Pokemon already exists"
                     )
-
-                pokemon_data = get_pokemon_data(pokemon_name.lower())
-
-                if not pokemon_data :                    
+               
+                try:
+                    pokemon_data = get_pokemon_data(pokemon_name.lower())
+                except ValueError:
                     raise HTTPException(
                         status_code=404,
-                        detail=f"No pokemon named '{pokemon_name.title()}' found "
+                        detail=f"No Pokémon named '{pokemon_name}' found"
                     )
-                else :
-                
-                    typelist=[]
-                    abilitylist=[]
-                    trainer_id = 0 
-                    pokemon_id = 0 
+            
+                typelist=[]
+                abilitylist=[]
+                trainer_id = 0 
+                pokemon_id = 0 
 
-                    #Checking  if types  exist if not  add types
-                    for  pokemon_types in pokemon_data["types"]:
-                        sql = """
-                            SELECT  tp.id , tp.name  FROM types tp
-                            where tp.name =  ? """
-                        cursor.execute(sql, (pokemon_types.title(),))
-                        pokemon_type = cursor.fetchone()
-
-                        if pokemon_type:
-                            typelist.append(pokemon_type[0])
-                        else : 
-                            sql = """
-                            INSERT INTO types (name) VALUES (?)
-                            """
-                            cursor.execute(sql, (pokemon_types.title(),))
-                            typelist.append(cursor.lastrowid) 
-                
-                    #Checking if abilities  exist if not  add ability
-                    for ability in pokemon_data["abilities"]:
-                        print(f"Ability  :  {ability['name'].title()}")
-                        sql = """
-                            SELECT  ab.id , ab.name  FROM abilities ab
-                            where ab.name =  ? """
-                        cursor.execute(sql, (ability['name'].title(),))
-                        pokemon_ability = cursor.fetchone()
-
-                        if pokemon_ability:
-                            abilitylist.append(pokemon_ability[0])
-                        else : 
-                            sql = """
-                            INSERT INTO abilities (name) VALUES (?)
-                            """
-                            cursor.execute(sql, (ability['name'].title(),))
-                            abilitylist.append(cursor.lastrowid) 
-                    
-                    #check  if trainer exist if not add trainer
+                #Checking  if types  exist if not  add types
+                for  pokemon_types in pokemon_data["types"]:
                     sql = """
-                            SELECT  tr.id , tr.name  FROM trainers tr
-                            where tr.name =  ? """
-                    cursor.execute(sql, (trainer_name,))
-                    trainer = cursor.fetchone()
+                        SELECT  tp.id , tp.name  FROM types tp
+                        where tp.name =  ? """
+                    cursor.execute(sql, (pokemon_types.title(),))
+                    pokemon_type = cursor.fetchone()
 
-                    if trainer:
-                        trainer_id = trainer[0]
+                    if pokemon_type:
+                        typelist.append(pokemon_type[0])
                     else : 
                         sql = """
-                        INSERT INTO trainers (name) VALUES (?)
+                        INSERT INTO types (name) VALUES (?)
                         """
-                        cursor.execute(sql, (trainer_name,))
-                        trainer_id = cursor.lastrowid
-                    
-                    # now we can Add the pokemon 
-                    type1 = typelist[0] if len(typelist) > 0 else None
-                    type2 = typelist[1] if len(typelist) > 1 else None
-                    
+                        cursor.execute(sql, (pokemon_types.title(),))
+                        typelist.append(cursor.lastrowid) 
+            
+                #Checking if abilities  exist if not  add ability
+                for ability in pokemon_data["abilities"]:
+                    print(f"Ability  :  {ability['name'].title()}")
                     sql = """
-                        INSERT INTO pokemon (name , type1 , type2 ) VALUES (?,?,?)
-                        """
-                    cursor.execute(sql, (pokemon_name,type1,type2 ))
-                    pokemon_id = cursor.lastrowid
-                
-                    #inserting trainer_pokemon_abilities
-                    for abilityID in abilitylist:
-                        sql = """
-                        INSERT OR IGNORE INTO trainer_pokemon_abilities 
-                        (pokemon_id , trainer_id , ability_id ) VALUES (?,?,?)
-                        """
-                        cursor.execute(sql, (pokemon_id,trainer_id,abilityID))
+                        SELECT  ab.id , ab.name  FROM abilities ab
+                        where ab.name =  ? """
+                    cursor.execute(sql, (ability['name'].title(),))
+                    pokemon_ability = cursor.fetchone()
 
-            if conn:
-                 conn.commit()          
+                    if pokemon_ability:
+                        abilitylist.append(pokemon_ability[0])
+                    else : 
+                        sql = """
+                        INSERT INTO abilities (name) VALUES (?)
+                        """
+                        cursor.execute(sql, (ability['name'].title(),))
+                        abilitylist.append(cursor.lastrowid) 
+                
+                #check  if trainer exist if not add trainer
+                sql = """
+                        SELECT  tr.id , tr.name  FROM trainers tr
+                        where tr.name =  ? """
+                cursor.execute(sql, (trainer_name,))
+                trainer = cursor.fetchone()
+
+                if trainer:
+                    trainer_id = trainer[0]
+                else : 
+                    sql = """
+                    INSERT INTO trainers (name) VALUES (?)
+                    """
+                    cursor.execute(sql, (trainer_name,))
+                    trainer_id = cursor.lastrowid
+                
+                # now we can Add the pokemon 
+                type1_id = typelist[0] if len(typelist) > 0 else None
+                type2_id = typelist[1] if len(typelist) > 1 else None
+                
+                sql = """
+                    INSERT INTO pokemon (name , type1_id , type2_id ) VALUES (?,?,?)
+                    """
+                cursor.execute(sql, (pokemon_name,type1_id,type2_id ))
+                pokemon_id = cursor.lastrowid
+            
+                #inserting trainer_pokemon_abilities
+                for abilityID in abilitylist:
+                    sql = """
+                    INSERT OR IGNORE INTO trainer_pokemon_abilities 
+                    (pokemon_id , trainer_id , ability_id ) VALUES (?,?,?)
+                    """
+                    cursor.execute(sql, (pokemon_id,trainer_id,abilityID))
+
+            
+            conn.commit()          
+            return {"message": "Successfully added"}
         except HTTPException:
-            if conn:
-                conn.rollback()
+            conn.rollback()
             raise
         except sqlite3.Error as e:
-             if conn:
-                conn.rollback()
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Some Unforseen  Error occured please Contact your administrator"
-                )
+            conn.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Some Unforseen  Error occured please Contact your administrator"
+            )
         finally:
             if conn:
                 conn.close()
 
 
-        return {"message": "Successfully added"}
+        
     # --- End Implementation ---
 
     print("FastAPI app created successfully.")
