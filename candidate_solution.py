@@ -54,7 +54,6 @@ def get_pokemon_data(pokemon_name:str):
     data = r.json()
 
     pokemon_data = {
-        "id": data["id"],
         "name": data["name"],
         # types in order (primary, secondary)
         "types": [
@@ -85,7 +84,7 @@ def get_pokemon_names():
     r.raise_for_status()
 
     data = r.json()
-    pokemon_pokemon = [p["name"] for p in data["results"]]
+    pokemon_pokemon = [p["name"].title() for p in data["results"]]
 
     return
  
@@ -98,7 +97,7 @@ def get_pokemon_types():
     r.raise_for_status()
 
     data = r.json()
-    pokemon_types = [t["name"] for t in data["results"]]
+    pokemon_types = [t["name"].title() for t in data["results"]]
 
     return 
 
@@ -111,12 +110,12 @@ def get_pokemon_abilities():
     r.raise_for_status()
 
     data = r.json()
-    pokemon_abilities = [a["name"] for a in data["results"]]
+    pokemon_abilities = [a["name"].title() for a in data["results"]]
 
     return 
 
 # Delete Duplicates
-def delete_dublicates(cursor,table_name ,conn: sqlite3.Connection):
+def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
     
     print("Start Deleting Duplicates ", table_name)
     allowed_tables = {"pokemon", "abilities", "types","trainers"}
@@ -321,7 +320,7 @@ def clean_database(conn: sqlite3.Connection):
                 return
             
             # --- Removing Duplicates ---
-            if not delete_dublicates(cursor, db_table, conn):
+            if not delete_duplicates(cursor, db_table, conn):
                 return
         # --- End Implementation ---
         print("Database cleaning finished and changes committed.")
@@ -386,13 +385,15 @@ def create_fastapi_app() -> FastAPI:
                         status_code=404,
                         detail=f"No Pokémon found with ability '{ability_name}' found "
                     )
+            else : 
+                raise HTTPException(status_code=500, detail="Database connection failed")  
                 
             conn.close()
             return [row[0] for row in rows]
         
         except sqlite3.Error as e:
             raise HTTPException(
-                    status_code=404,
+                    status_code=500,
                     detail=f"Some Unforseen  Error occured please Contact your administrator"
                 )
         
@@ -421,12 +422,14 @@ def create_fastapi_app() -> FastAPI:
                 cursor = conn.cursor()
 
                 sql = """
-                SELECT  pk.name  FROM pokemon pk 
-                    inner join types tp on pk.type1_id = tp.id or pk.type2_id = tp.id 
-                    where tp.name =  ? """
-            
-                cursor.execute(sql, (type_name,))
-
+                    SELECT pk.name
+                    FROM pokemon pk
+                    LEFT JOIN types t1 ON pk.type1_id = t1.id
+                    LEFT JOIN types t2 ON pk.type2_id = t2.id
+                    WHERE t1.name = ? OR t2.name = ?
+                    """
+                cursor.execute(sql, (type_name, type_name))
+           
                 rows = cursor.fetchall()
 
                 if not rows:
@@ -435,13 +438,15 @@ def create_fastapi_app() -> FastAPI:
                         status_code=404,
                         detail=f"No Pokémon found with type '{type_name}' found "
                     )
-                
+            else : 
+                raise HTTPException(status_code=500, detail="Database connection failed") 
+             
             conn.close()
             return [row[0] for row in rows]
         
         except sqlite3.Error as e:
             raise HTTPException(
-                    status_code=404,
+                    status_code=500,
                     detail=f"Some Unforseen Error occured please contact your administrator"
                 )
         # --- End Implementation ---
@@ -464,7 +469,7 @@ def create_fastapi_app() -> FastAPI:
             
             pokemon_name = pokemon_name.title()
             conn = connect_db()
-
+            
             if conn:
                 cursor = conn.cursor()
 
@@ -484,13 +489,15 @@ def create_fastapi_app() -> FastAPI:
                         status_code=404,
                         detail=f"No Trainer names found for pokemon named '{pokemon_name}' found "
                     )
+            else : 
+                raise HTTPException(status_code=500, detail="Database connection failed")  
                 
             conn.close()
             return [row[0] for row in rows]
         
         except sqlite3.Error as e:
             raise HTTPException(
-                    status_code=404,
+                    status_code=500,
                     detail=f"Some Unforseen Error occured please contact your administrator"
                 )
         # --- End Implementation ---
@@ -541,7 +548,7 @@ def create_fastapi_app() -> FastAPI:
         
         except sqlite3.Error as e:
             raise HTTPException(
-                    status_code=404,
+                    status_code=500,
                     detail=f"Some Unforseen  Error occured please Contact your administrator"
                 )
         # --- End Implementation ---
@@ -581,14 +588,102 @@ def create_fastapi_app() -> FastAPI:
 
                 if existing:
                     raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
+                        status_code=409,
                         detail="Pokemon already exists"
                     )
-        
-               
+
+                pokemon_data = get_pokemon_data(pokemon_name.lower())
+
+                if not pokemon_data :
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No pokemon named '{pokemon_name.title()}' found "
+                    )
+                else :
+                
+                    typelist=[]
+                    abilitylist=[]
+                    trainer_id = 0 
+                    pokemon_id = 0 
+
+                    #Checking  if types  exist if not  add types
+                    for  pokemon_types in pokemon_data["types"]:
+                        sql = """
+                            SELECT  tp.id , tp.name  FROM types tp
+                            where tp.name =  ? """
+                        cursor.execute(sql, (pokemon_types.title(),))
+                        pokemon_type = cursor.fetchone()
+
+                        if pokemon_type:
+                            typelist.append(pokemon_type['id'])
+                        else : 
+                            sql = """
+                            INSERT INTO types (name) VALUES (?)
+                            """
+                            cursor.execute(sql, (pokemon_types.title()))
+                            
+                            typelist.append(cursor.lastrowid) 
+                        conn.commit() 
+
+                    #Checking if abilities  exist if not  add ability
+                    for ability in pokemon_data["abilities"]:
+                        print(f"Ability  :  {ability['name'].title()}")
+                        sql = """
+                            SELECT  ab.id , ab.name  FROM abilities ab
+                            where ab.name =  ? """
+                        cursor.execute(sql, (ability['name'].title(),))
+                        pokemon_ability = cursor.fetchone()
+
+                        if pokemon_ability:
+                            abilitylist.append(pokemon_ability['id'])
+                        else : 
+                            sql = """
+                            INSERT INTO abilities (name) VALUES (?)
+                            """
+                            cursor.execute(sql, (ability['name'].title()))
+                            abilitylist.append(cursor.lastrowid) 
+                        conn.commit() 
+                        
+                    #check  if trainer exist if not add trainer
+                    sql = """
+                            SELECT  tp.id , tp.name  FROM trainers tr
+                            where tr.name =  ? """
+                    cursor.execute(sql, (trainer_name,))
+                    trainer = cursor.fetchone()
+
+                    if trainer:
+                        trainer_id = trainer['id']
+                    else : 
+                        sql = """
+                        INSERT INTO trainers (name) VALUES (?)
+                        """
+                        cursor.execute(sql, (trainer_name))
+                        trainer_id = cursor.lastrowid
+                    conn.commit() 
+                    
+                    # now we can Add the pokemon 
+                    type1 = typelist[0] if len(typelist) > 0 else None
+                    type2 = typelist[1] if len(typelist) > 1 else None
+                    
+                    sql = """
+                        INSERT INTO pokemon (name , type1 , type2 ) VALUES (?,?,?)
+                        """
+                    cursor.execute(sql, (pokemon_name,type1,type2 ))
+                    pokemon_id = cursor.lastrowid
+                    conn.commit() 
+
+                    #inserting trainer_pokemon_abilities
+                    for abilityID in abilitylist:
+                        sql = """
+                        INSERT INTO trainer_pokemon_abilities 
+                        (pokemon_id , trainer_id , ability_id ) VALUES (?,?,?)
+                        """
+                        cursor.execute(sql, (pokemon_id,trainer_id,abilityID))
+                        conn.commit() 
+
         except sqlite3.Error as e:
             raise HTTPException(
-                    status_code=404,
+                    status_code=500,
                     detail=f"Some Unforseen  Error occured please Contact your administrator"
                 )
         return {"message": "Successfully added"}
@@ -603,10 +698,10 @@ if __name__ == "__main__":
     # Ensure data is cleaned before running the app for testing
     temp_conn = connect_db()
     if temp_conn:
+        
         get_pokemon_names()  
         get_pokemon_types()
         get_pokemon_abilities()
-
         clean_database(temp_conn)
         temp_conn.close()
         print("DB Connection Closed")
@@ -614,4 +709,4 @@ if __name__ == "__main__":
         print("DB Does Not Exist")
         
     app_instance = create_fastapi_app()
-   # uvicorn.run(app_instance, host="127.0.0.1", port=8000)
+    uvicorn.run(app_instance, host="127.0.0.1", port=8000)
