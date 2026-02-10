@@ -164,7 +164,7 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
 def get_spelling_suggestion(name: str , pokemon_list):
     
     return get_close_matches(
-        name.lower(),
+        name.title(),
         pokemon_list,
         n=1,          # max suggestions
         cutoff=0.6    # similarity threshold
@@ -297,6 +297,10 @@ def clean_database(conn: sqlite3.Connection):
     print("Starting database cleaning...")
 
     try:
+        get_pokemon_names()  
+        get_pokemon_types()
+        get_pokemon_abilities()
+    
         # --- Implement Here ---
         db_tables = ["pokemon","types","abilities","trainers"]
         for db_table in db_tables:
@@ -615,15 +619,15 @@ def create_fastapi_app() -> FastAPI:
                         pokemon_type = cursor.fetchone()
 
                         if pokemon_type:
-                            typelist.append(pokemon_type['id'])
+                            typelist.append(pokemon_type[0])
                         else : 
                             sql = """
                             INSERT INTO types (name) VALUES (?)
                             """
-                            cursor.execute(sql, (pokemon_types.title()))
-                            
+                            cursor.execute(sql, (pokemon_types.title(),))
                             typelist.append(cursor.lastrowid) 
-                        conn.commit() 
+                    
+                    conn.commit() 
 
                     #Checking if abilities  exist if not  add ability
                     for ability in pokemon_data["abilities"]:
@@ -635,30 +639,31 @@ def create_fastapi_app() -> FastAPI:
                         pokemon_ability = cursor.fetchone()
 
                         if pokemon_ability:
-                            abilitylist.append(pokemon_ability['id'])
+                            abilitylist.append(pokemon_ability[0])
                         else : 
                             sql = """
                             INSERT INTO abilities (name) VALUES (?)
                             """
-                            cursor.execute(sql, (ability['name'].title()))
+                            cursor.execute(sql, (ability['name'].title(),))
                             abilitylist.append(cursor.lastrowid) 
-                        conn.commit() 
+                    conn.commit() 
                         
                     #check  if trainer exist if not add trainer
                     sql = """
-                            SELECT  tp.id , tp.name  FROM trainers tr
+                            SELECT  tr.id , tr.name  FROM trainers tr
                             where tr.name =  ? """
                     cursor.execute(sql, (trainer_name,))
                     trainer = cursor.fetchone()
 
                     if trainer:
-                        trainer_id = trainer['id']
+                        trainer_id = trainer[0]
                     else : 
                         sql = """
                         INSERT INTO trainers (name) VALUES (?)
                         """
                         cursor.execute(sql, (trainer_name))
                         trainer_id = cursor.lastrowid
+
                     conn.commit() 
                     
                     # now we can Add the pokemon 
@@ -698,10 +703,6 @@ if __name__ == "__main__":
     # Ensure data is cleaned before running the app for testing
     temp_conn = connect_db()
     if temp_conn:
-        
-        get_pokemon_names()  
-        get_pokemon_types()
-        get_pokemon_abilities()
         clean_database(temp_conn)
         temp_conn.close()
         print("DB Connection Closed")
