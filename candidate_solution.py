@@ -124,16 +124,20 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
         raise ValueError("Invalid table name")
         return False
 
+    # Pokemon Deletes
     if table_name == "pokemon" :
-        # if  pokemon table whe need to  Delete  the  record   from 
-        # trainer_pokemon_abilities 
-        sql = """DELETE FROM trainer_pokemon_abilities
-                WHERE pokemon_id NOT IN (
-                    SELECT MIN(id)
-                        FROM pokemon
-                    GROUP BY LOWER(name)
-            )"""
-        
+        sql = f"""
+        DELETE FROM {table_name}
+        WHERE id NOT IN (
+            SELECT MIN(id)
+			FROM {table_name}
+			where id in (
+				select pokemon_id from 
+				trainer_pokemon_abilities
+			)
+		GROUP BY LOWER(name)
+        )
+        """
         try:
             cursor.execute(sql)
             conn.commit() 
@@ -142,77 +146,40 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
             conn.rollback()
             return False
         
-    # Fix Abilities mapping
+    # Abilities deletes
     if table_name == "abilities" :
-        #We need to  first  fix the  mapping  for trainer_pokemon_abilities 
-        #before we can delete Duplicates
-       
-        sql = f"""
-        SELECT d.id AS duplicate_id, m.min_id
-            FROM {table_name} d
-            JOIN (
-                SELECT LOWER(name) AS lname, MIN(id) AS min_id
-                FROM {table_name}
-                GROUP BY LOWER(name)
-            ) m
-            ON LOWER(d.name) = m.lname
-            WHERE d.id != m.min_id;
+       sql = f"""
+        DELETE FROM {table_name}
+        WHERE id NOT IN (
+            SELECT MIN(id)
+			FROM {table_name}
+			where id in (
+				select ability_id from 
+				trainer_pokemon_abilities
+			)
+		GROUP BY LOWER(name)
+        )
         """
-        try:
-            cursor.execute(sql)
 
-            abilitiy_ids = cursor.fetchall()
-            for duplicate_id, min_id in abilitiy_ids:
-                sql = """
-                UPDATE trainer_pokemon_abilities
-                SET ability_id = ?
-                WHERE ability_id = ?
-                """
-                cursor.execute(sql, (min_id, duplicate_id))
-                conn.commit()
-
-        except sqlite3.Error as e:
-            print(f"An error occurred during database cleaning {table_name}: {e}")
-            conn.rollback()
-            return False
-
-    # Fix trainers mapping
+    # Trainers deletion
     if table_name == "trainers" :
-        #We need to  first  fix the  mapping  for trainer_pokemon_abilities 
-        #before we can delete Duplicates
-       
-        sql = f"""
-        SELECT d.id AS duplicate_id, m.min_id
-            FROM {table_name} d
-            JOIN (
-                SELECT LOWER(name) AS lname, MIN(id) AS min_id
-                FROM {table_name}
-                GROUP BY LOWER(name)
-            ) m
-            ON LOWER(d.name) = m.lname
-            WHERE d.id != m.min_id;
+       sql = f"""
+        DELETE FROM {table_name}
+        WHERE id NOT IN (
+            SELECT MIN(id)
+			FROM {table_name}
+			where id in (
+				select trainer_id from 
+				trainer_pokemon_abilities
+			)
+		GROUP BY LOWER(name)
+        )
         """
-        try:
-            cursor.execute(sql)
-
-            trainer_ids = cursor.fetchall()
-            for duplicate_id, min_id in trainer_ids:
-                sql = """
-                UPDATE trainer_pokemon_abilities
-                SET trainer_id = ?
-                WHERE trainer_id = ?
-                """
-                cursor.execute(sql, (min_id, duplicate_id))
-                conn.commit()
-
-        except sqlite3.Error as e:
-            print(f"An error occurred during database cleaning {table_name}: {e}")
-            conn.rollback()
-            return False
         
     # Fixing types mapping    
     if table_name == "types" :
-        #We need to  first  fix the  mapping  for trainer_pokemon_abilities 
+        
+         #We need to  first  fix the  mapping  for types 
         #before we can delete Duplicates
         sql = f"""
             SELECT d.id AS duplicate_id, m.min_id
@@ -243,9 +210,9 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
             print(f"An error occurred during database cleaning {table_name}: {e}")
             conn.rollback()
             return False
-
-    # And  now we can Delete the Dullicates from the tables 
-    sql = f"""
+        
+        #now  we Can Delete Duplicates
+        sql = f"""
         DELETE FROM {table_name}
         WHERE id NOT IN (
             SELECT MIN(id)
@@ -253,6 +220,8 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
             GROUP BY LOWER(name)
         )
         """
+    # And  now we can Delete the Dullicates from the tables 
+    
     try:
         cursor.execute(sql)
         conn.commit() 
