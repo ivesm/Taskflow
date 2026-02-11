@@ -7,6 +7,16 @@ import uvicorn
 import httpx
 import asyncio
 from difflib import get_close_matches
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    filename="app.log",   # Writes to file
+    filemode="a"          # Append mode
+)
+
+logger = logging.getLogger("pokemon_api")
 
 # --- Constants ---
 DB_NAME = "pokemon_assessment.db"
@@ -131,8 +141,8 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
         WHERE id NOT IN (
             SELECT MIN(id)
 			FROM {table_name}
-			where id in (
-				select pokemon_id from 
+			WHERE id in (
+				SELECT pokemon_id FROM 
 				trainer_pokemon_abilities
 			)
 		GROUP BY LOWER(name)
@@ -153,8 +163,8 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
         WHERE id NOT IN (
             SELECT MIN(id)
 			FROM {table_name}
-			where id in (
-				select ability_id from 
+			WHERE id in (
+				SELECT ability_id FROM 
 				trainer_pokemon_abilities
 			)
 		GROUP BY LOWER(name)
@@ -168,8 +178,8 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
         WHERE id NOT IN (
             SELECT MIN(id)
 			FROM {table_name}
-			where id in (
-				select trainer_id from 
+			WHERE id in (
+				SELECT trainer_id FROM 
 				trainer_pokemon_abilities
 			)
 		GROUP BY LOWER(name)
@@ -232,7 +242,7 @@ def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
 
     print("End Deleting Duplicates")
     return True 
-    
+   
 # get Spelling Suggestion
 def get_spelling_suggestion(name: str , pokemon_list):
     
@@ -425,6 +435,7 @@ def create_fastapi_app() -> FastAPI:
         Return a simple JSON response object that contains a `message` key with any corresponding value.
         """
         # --- Implement here ---
+        logger.info(f"ROOT")
         return {"message": "Pokemon Assessment API - Basic"}
         # --- End Implementation ---
 
@@ -648,6 +659,8 @@ def create_fastapi_app() -> FastAPI:
         description="Pokemon name (Titlecase, hyphen-separated)"
     )):
         
+
+        logger.info(f"Adding POKEMON")
         try:     
             pokemon_name = pokemon_name.title()
             trainer_name = trainer_name.title() 
@@ -655,6 +668,7 @@ def create_fastapi_app() -> FastAPI:
             conn = connect_db()
 
             if conn:
+                logger.info(f"Adding POKKEMON ")
                 cursor = conn.cursor()
                 conn.execute("BEGIN")
                 sql = """ SELECT id FROM pokemon WHERE name = ?"""
