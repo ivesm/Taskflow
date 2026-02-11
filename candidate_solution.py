@@ -7,7 +7,7 @@ import uvicorn
 import httpx
 import asyncio
 from difflib import get_close_matches
-import logging
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -566,7 +566,9 @@ def create_fastapi_app() -> FastAPI:
                 SELECT  tr.name  FROM trainers tr 
                     inner join trainer_pokemon_abilities tpa on tr.id = tpa.trainer_id
                     inner join pokemon pk on pk.id = tpa.pokemon_id  
-                    where pk.name =  ? """
+                    where pk.name =  ?
+                     limit 1
+                       """
             
                 cursor.execute(sql, (pokemon_name,))
 
@@ -659,8 +661,6 @@ def create_fastapi_app() -> FastAPI:
         description="Pokemon name (Titlecase, hyphen-separated)"
     )):
         
-
-        logger.info(f"Adding POKEMON")
         try:     
             pokemon_name = pokemon_name.title()
             trainer_name = trainer_name.title() 
