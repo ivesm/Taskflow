@@ -7,16 +7,6 @@ import uvicorn
 import httpx
 import asyncio
 from difflib import get_close_matches
-import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    filename="app.log",   # Writes to file
-    filemode="a"          # Append mode
-)
-
-logger = logging.getLogger("pokemon_api")
 
 # --- Constants ---
 DB_NAME = "pokemon_assessment.db"
@@ -413,7 +403,7 @@ def create_fastapi_app() -> FastAPI:
         Return a simple JSON response object that contains a `message` key with any corresponding value.
         """
         # --- Implement here ---
-        logger.info(f"ROOT")
+        
         return {"message": "Pokemon Assessment API - Basic"}
         # --- End Implementation ---
 
@@ -646,7 +636,7 @@ def create_fastapi_app() -> FastAPI:
             conn = connect_db()
 
             if conn:
-                logger.info(f"Adding POKKEMON ")
+                
                 cursor = conn.cursor()
                 conn.execute("BEGIN")
                 sql = """ SELECT id FROM pokemon WHERE name = ?"""
