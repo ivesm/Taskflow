@@ -7,7 +7,7 @@ import uvicorn
 import httpx
 import asyncio
 from difflib import get_close_matches
-
+import logging
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,6 +24,231 @@ pokemon_pokemon     = []
 pokemon_types       = []
 pokemon_abilities   = []
 
+
+class CleanPokemon:
+    
+    def __init__(self, table_name ,conn: sqlite3.Connection):
+        
+        self.table_name = table_name
+        self.conn = conn
+        self.cursor = conn.cursor()
+       
+        
+    def __del__(self):
+        self.conn.commit()
+
+    # get Spelling Suggestion
+    def get_spelling_suggestion(self,name: str , pokemon_list):
+    
+        return get_close_matches(
+            name.title(),
+            pokemon_list,
+            n=1,          # max suggestions
+            cutoff=0.6    # similarity threshold
+        )
+    
+    # Remove Redundant Data 
+    def remove_redundant_data(self): 
+
+        print("Start remove_redundant_data ", self.table_name )
+        sql = f"""
+            DELETE FROM {self.table_name}
+            WHERE TRIM(name) = ''
+            OR TRIM(name) = '---'
+            OR TRIM(name) = '???'
+            OR name like '%Remove%' 
+            """
+        # OR name like '%Remove%'   only because  Abilites has a Remove this ability Record
+        try: 
+            self.cursor.execute(sql)
+            
+        except sqlite3.Error as e:
+            print(f"An error occurred during remove Redundant data pokemon: {e}")
+            self.conn.rollback()
+            return False
+
+        print("end remove_redundant_data ")
+        return True
+    # Correct Spelling 
+    def correct_spelling(self , list_name):
+
+        print("Start  correct_spelling ", self.table_name )
+  
+        sql = f"""
+            SELECT id , name  FROM {self.table_name}
+            """
+        try:
+            self.cursor.execute(sql)
+            names_ids = self.cursor.fetchall()
+            for name_id in names_ids:            
+                id_value = name_id[0]  
+                name_value = name_id[1]
+
+                #retrieving  Supposed  Correct  Spelling  
+                table_name = self.get_spelling_suggestion(name_value , list_name)
+                
+                if table_name:
+                    table_name = table_name[0]
+                else : 
+                    table_name = name_value
+
+                # update the  Spelling of the names 
+                if table_name !=  name_value :
+                    sql_update =f"UPDATE {self.table_name} SET name = ? WHERE id = ?"
+                    self.cursor.execute(sql_update, (table_name, id_value))
+                    
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            print(f"An error occurred during Spelling Fix cleaning {self.table_name}: {e}")
+            return False
+
+        print("End  correct_misspellings ")
+        return True   
+    
+    def standardise_case(self): 
+        print("Start Standardise Case  ",self.table_name )
+        
+        sql_select = f"""
+            SELECT id , name  FROM {self.table_name}
+            """
+        
+        try: 
+            self.cursor.execute(sql_select)
+            names_ids = self.cursor.fetchall()
+            for name_id in names_ids:
+                id_value = name_id[0]    # id is the first column
+                name_value = name_id[1] 
+                titlecase = name_value.title()
+
+                try: 
+                    #update table
+                    sql_update =f"UPDATE {self.table_name} SET name = ? WHERE id = ?"
+                    self.cursor.execute(sql_update, (titlecase, id_value))
+                    
+                except sqlite3.Error as e:
+                    print(f"An error occurred Updating Case pokemons: {e}")
+                    self.conn.rollback()
+                    return False
+        except sqlite3.Error as e:
+            print(f"An error occurred table pokemon Selection : {e}")
+            self.conn.rollback()
+            return False
+        
+        self.conn.commit()
+        print("End Standardise Case")
+        return True   
+        
+    # Delete Duplicates
+    def delete_duplicates(self):
+        
+        print("Start Deleting Duplicates ", self.table_name)
+
+        # Pokemon Deletes
+        if self.table_name == "pokemon" :
+            sql = f"""
+            DELETE FROM {self.table_name}
+            WHERE id NOT IN (
+                SELECT MIN(id)
+                FROM {self.table_name}
+                WHERE id in (
+                    SELECT pokemon_id FROM 
+                    trainer_pokemon_abilities
+                )
+            GROUP BY LOWER(name)
+            )
+            """
+            
+        # Abilities deletes
+        if self.table_name == "abilities" :
+            sql = f"""
+                DELETE FROM {self.table_name}
+                WHERE id NOT IN (
+                    SELECT MIN(id)
+                    FROM {self.table_name}
+                    WHERE id in (
+                        SELECT ability_id FROM 
+                        trainer_pokemon_abilities
+                    )
+                GROUP BY LOWER(name)
+                )
+                """
+
+
+        # Trainers deletion
+        if self.table_name == "trainers" :
+            sql = f"""
+                DELETE FROM {self.table_name}
+                WHERE id NOT IN (
+                    SELECT MIN(id)
+                    FROM {self.table_name}
+                    WHERE id in (
+                        SELECT trainer_id FROM 
+                        trainer_pokemon_abilities
+                    )
+                GROUP BY LOWER(name)
+                )
+                """
+            
+        # Fixing types mapping    
+        if self.table_name == "types" :
+            
+            #We need to  first  fix the  mapping  for types 
+            #before we can delete Duplicates
+            sql = f"""
+                SELECT d.id AS duplicate_id, m.min_id
+                    FROM {self.table_name} d
+                    JOIN (
+                        SELECT LOWER(name) AS lname, MIN(id) AS min_id
+                        FROM {self.table_name}
+                        GROUP BY LOWER(name)
+                    ) m
+                    ON LOWER(d.name) = m.lname
+                    WHERE d.id != m.min_id;
+                """
+            
+            try:
+                self.cursor.execute(sql)
+                type_ids = self.cursor.fetchall()
+                for duplicate_id, min_id in type_ids:    
+                    sql = """
+                    UPDATE pokemon
+                    SET
+                        type1_id = CASE WHEN type1_id = ? THEN ? ELSE type1_id END,
+                        type2_id = CASE WHEN type2_id = ? THEN ? ELSE type2_id END
+                    """
+                    self.cursor.execute(sql, (duplicate_id, min_id, duplicate_id, min_id))
+        
+            except sqlite3.Error as e:
+                print(f"An error occurred during database cleaning {self.table_name}: {e}")
+                self.conn.rollback()
+                return False
+    
+            #now  we Can Delete Duplicates
+            sql = f"""
+            DELETE FROM {self.table_name}
+            WHERE id NOT IN (
+                SELECT MIN(id)
+                FROM {self.table_name}
+                GROUP BY LOWER(name)
+            )
+            """
+        # And  now we can Delete the Dullicates from the tables 
+        
+        try:
+            self.cursor.execute(sql)
+            self.conn.commit()
+            
+        except sqlite3.Error as e:
+            print(f"An error occurred during database cleaning {self.table_name}: {e}")
+            self.conn.rollback()
+            return False
+
+        print("End Deleting Duplicates")
+        return True 
+
+
+
+####------------------ End  of Class ------------------------------#####
 # --- Database Connection ---
 def connect_db() -> Optional[sqlite3.Connection]:
     """
@@ -86,22 +311,18 @@ def get_pokemon_data(pokemon_name:str):
 
 # getting all Pokemon names 
 def get_pokemon_names():
-    global pokemon_pokemon
-
-    url = f"https://pokeapi.co/api/v2/pokemon?limit=500"
-    
+   
+    url = f"https://pokeapi.co/api/v2/pokemon?limit=500"  
     r = httpx.get(url)
     r.raise_for_status()
 
     data = r.json()
-    pokemon_pokemon = [p["name"].title() for p in data["results"]]
+    names = [p["name"].title() for p in data["results"]]
 
-    return
+    return names
  
 # getting all pokemon types
 def get_pokemon_types():
-    global pokemon_types
-
     url = f"https://pokeapi.co/api/v2/type?limit=500"
     r = httpx.get(url)
     r.raise_for_status()
@@ -109,12 +330,11 @@ def get_pokemon_types():
     data = r.json()
     pokemon_types = [t["name"].title() for t in data["results"]]
 
-    return 
+    return  pokemon_types
 
 # getting all pokemon abilities 
 def get_pokemon_abilities():
-    global pokemon_abilities
-
+    
     url = f"https://pokeapi.co/api/v2/ability?limit=1000"
     r = httpx.get(url)
     r.raise_for_status()
@@ -122,247 +342,7 @@ def get_pokemon_abilities():
     data = r.json()
     pokemon_abilities = [a["name"].title() for a in data["results"]]
 
-    return 
-
-# Delete Duplicates
-def delete_duplicates(cursor,table_name ,conn: sqlite3.Connection):
-    
-    print("Start Deleting Duplicates ", table_name)
-    allowed_tables = {"pokemon", "abilities", "types","trainers"}
-    
-    if table_name not in allowed_tables:
-        raise ValueError("Invalid table name")
-        return False
-
-    # Pokemon Deletes
-    if table_name == "pokemon" :
-        sql = f"""
-        DELETE FROM {table_name}
-        WHERE id NOT IN (
-            SELECT MIN(id)
-			FROM {table_name}
-			WHERE id in (
-				SELECT pokemon_id FROM 
-				trainer_pokemon_abilities
-			)
-		GROUP BY LOWER(name)
-        )
-        """
-        try:
-            cursor.execute(sql)
-            conn.commit() 
-        except sqlite3.Error as e:
-            print(f"An error occurred during database cleaning {table_name}: {e}")
-            conn.rollback()
-            return False
-        
-    # Abilities deletes
-    if table_name == "abilities" :
-       sql = f"""
-        DELETE FROM {table_name}
-        WHERE id NOT IN (
-            SELECT MIN(id)
-			FROM {table_name}
-			WHERE id in (
-				SELECT ability_id FROM 
-				trainer_pokemon_abilities
-			)
-		GROUP BY LOWER(name)
-        )
-        """
-
-    # Trainers deletion
-    if table_name == "trainers" :
-       sql = f"""
-        DELETE FROM {table_name}
-        WHERE id NOT IN (
-            SELECT MIN(id)
-			FROM {table_name}
-			WHERE id in (
-				SELECT trainer_id FROM 
-				trainer_pokemon_abilities
-			)
-		GROUP BY LOWER(name)
-        )
-        """
-        
-    # Fixing types mapping    
-    if table_name == "types" :
-        
-         #We need to  first  fix the  mapping  for types 
-        #before we can delete Duplicates
-        sql = f"""
-            SELECT d.id AS duplicate_id, m.min_id
-                FROM {table_name} d
-                JOIN (
-                    SELECT LOWER(name) AS lname, MIN(id) AS min_id
-                    FROM {table_name}
-                    GROUP BY LOWER(name)
-                ) m
-                ON LOWER(d.name) = m.lname
-                WHERE d.id != m.min_id;
-            """
-        
-        try:
-            cursor.execute(sql)
-            type_ids = cursor.fetchall()
-            for duplicate_id, min_id in type_ids:    
-                sql = """
-                UPDATE pokemon
-                SET
-                    type1_id = CASE WHEN type1_id = ? THEN ? ELSE type1_id END,
-                    type2_id = CASE WHEN type2_id = ? THEN ? ELSE type2_id END
-                """
-                cursor.execute(sql, (duplicate_id, min_id, duplicate_id, min_id))
-                conn.commit()
-
-        except sqlite3.Error as e:
-            print(f"An error occurred during database cleaning {table_name}: {e}")
-            conn.rollback()
-            return False
-        
-        #now  we Can Delete Duplicates
-        sql = f"""
-        DELETE FROM {table_name}
-        WHERE id NOT IN (
-            SELECT MIN(id)
-            FROM {table_name}
-            GROUP BY LOWER(name)
-        )
-        """
-    # And  now we can Delete the Dullicates from the tables 
-    
-    try:
-        cursor.execute(sql)
-        conn.commit() 
-    except sqlite3.Error as e:
-        print(f"An error occurred during database cleaning {table_name}: {e}")
-        conn.rollback()
-        return False
-
-    print("End Deleting Duplicates")
-    return True 
-   
-# get Spelling Suggestion
-def get_spelling_suggestion(name: str , pokemon_list):
-    
-    return get_close_matches(
-        name.title(),
-        pokemon_list,
-        n=1,          # max suggestions
-        cutoff=0.6    # similarity threshold
-    )
-
-# Correct Spelling 
-#  there is no official  list   for the Correct spelling of trainers 
-#  so  we cannot fix  trainer names 
-def correct_spelling(cursor ,table_name ,conn: sqlite3.Connection):
-
-    print("Start  correct_spelling ", table_name )
-  
-    allowed_tables = {"pokemon", "abilities", "types"}
-    if table_name not in allowed_tables:
-        raise ValueError("Invalid table name")
-        return False
-   
-    sql = f"""
-        SELECT id , name  FROM {table_name}
-        """
-    try:
-        cursor.execute(sql)
-        names_ids = cursor.fetchall()
-        for name_id in names_ids:            
-            id_value = name_id[0]  
-            name_value = name_id[1]
-
-            #retrieving  Supposed  Correct  Spelling 
-            list_name = "pokemon_"+table_name    
-            pokemon_name = get_spelling_suggestion(name_value , globals()[list_name])
-            
-            if pokemon_name:
-                pokemon_name = pokemon_name[0]
-            else : 
-                pokemon_name = name_value
-
-            # update the  Spelling of the names 
-            if pokemon_name !=  name_value :
-                sql_update =f"UPDATE {table_name} SET name = ? WHERE id = ?"
-                cursor.execute(sql_update, (pokemon_name, id_value))
-                conn.commit()
-
-    except sqlite3.Error as e:
-        print(f"An error occurred during Spelling Fix cleaning {table_name}: {e}")
-        return False
-
-    print("End  correct_misspellings ")
-    return True   
-
-# Standardise the case   for  the names in the tables 
-# All names Should  be Title case 
-def standardise_case(cursor,table_name ,conn: sqlite3.Connection): 
-    print("Start Standardise Case  ",table_name )
-
-    allowed_tables = {"pokemon", "abilities", "types","trainers"}
-    if table_name not in allowed_tables:
-        raise ValueError("Invalid table name")
-        return False
-    
-    sql_select = f"""
-        SELECT id , name  FROM {table_name}
-        """
-    
-    try: 
-        cursor.execute(sql_select)
-        names_ids = cursor.fetchall()
-        for name_id in names_ids:
-            id_value = name_id[0]    # id is the first column
-            name_value = name_id[1] 
-            titlecase = name_value.title()
-
-            try: 
-                #update table
-                sql_update =f"UPDATE {table_name} SET name = ? WHERE id = ?"
-                cursor.execute(sql_update, (titlecase, id_value))
-                conn.commit()
-            except sqlite3.Error as e:
-                print(f"An error occurred Updating Case pokemons: {e}")
-                return False
-    except sqlite3.Error as e:
-        print(f"An error occurred table pokemon Selection : {e}")
-        return False
-
-    print("End Standardise Case")
-    return True   
-
-# Remove Redundant Data 
-def remove_redundant_data(cursor,table_name ,conn: sqlite3.Connection): 
-
-    print("Start remove_redundant_data ",table_name )
-
-    allowed_tables = {"pokemon", "abilities", "types","trainers"}
-    if table_name not in allowed_tables:
-        raise ValueError("Invalid table name")
-        return False
-    
-
-    sql = f"""
-        DELETE FROM {table_name}
-        WHERE TRIM(name) = ''
-        OR TRIM(name) = '---'
-        OR TRIM(name) = '???'
-        OR name like '%Remove%' 
-        """
-    # OR name like '%Remove%'   only because  Abilites has a Remove this ability Record
-    try: 
-        cursor.execute(sql)
-        conn.commit()
-    except sqlite3.Error as e:
-        print(f"An error occurred during remove Redundant data pokemon: {e}")
-        conn.rollback()
-        return False
-
-    print("end remove_redundant_data ")
-    return True
+    return pokemon_abilities
 
 # --- Data Cleaning ---
 def clean_database(conn: sqlite3.Connection):
@@ -378,38 +358,36 @@ def clean_database(conn: sqlite3.Connection):
     if not conn:
         print("Error: Invalid database connection provided for cleaning.")
         return
-
-    cursor = conn.cursor()
+    
     print("Starting database cleaning...")
 
     try:
-        # Retrieving pokemon data used  for Cleaning data 
+       # Retrieving pokemon data used  for Cleaning data 
 
-        get_pokemon_names()  
-        get_pokemon_types()
-        get_pokemon_abilities()
-    
         # --- Implement Here ---
         db_tables = ["pokemon","types","abilities","trainers"]
+        #db_tables = ["pokemon"]
         for db_table in db_tables:
             
+            cleaned_data = CleanPokemon(db_table,conn)
             # --- Remove Redundant data ---    
-            if not remove_redundant_data(cursor, db_table,conn):    
-                return
-            
-            # --- Correct Spelling 
-            if db_table != "trainers" :
-                if not correct_spelling(cursor, db_table,conn) :
-                    return
-        
-            # --- Standardize case ----
+            cleaned_data.remove_redundant_data()
 
-            if not standardise_case(cursor, db_table, conn):
-                return
-            
-            # --- Removing Duplicates ---
-            if not delete_duplicates(cursor, db_table, conn):
-                return
+            if db_table == "pokemon" :
+                cleaned_data.correct_spelling(get_pokemon_names())
+
+            if db_table == "types" :
+                cleaned_data.correct_spelling(get_pokemon_types())
+
+            if db_table == "types" :
+                cleaned_data.correct_spelling(get_pokemon_abilities())    
+
+            cleaned_data.standardise_case()
+                
+            cleaned_data.delete_duplicates()
+                
+
+            conn.commit()
         # --- End Implementation ---
         print("Database cleaning finished and changes committed.")
 
@@ -567,7 +545,7 @@ def create_fastapi_app() -> FastAPI:
                     inner join trainer_pokemon_abilities tpa on tr.id = tpa.trainer_id
                     inner join pokemon pk on pk.id = tpa.pokemon_id  
                     where pk.name =  ?
-                     limit 1
+                     group by pk.name
                        """
             
                 cursor.execute(sql, (pokemon_name,))
@@ -763,7 +741,6 @@ def create_fastapi_app() -> FastAPI:
                     (pokemon_id , trainer_id , ability_id ) VALUES (?,?,?)
                     """
                     cursor.execute(sql, (pokemon_id,trainer_id,abilityID))
-
             
             conn.commit()          
             return {"message": "Successfully added"}
