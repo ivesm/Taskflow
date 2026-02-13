@@ -23,7 +23,6 @@ class CleanPokemon:
         self.conn = conn
         self.cursor = conn.cursor()
        
-        
     def __del__(self):
         self.conn.commit()
 
@@ -143,6 +142,7 @@ class CleanPokemon:
                 WHERE id in (
                     SELECT pokemon_id FROM 
                     trainer_pokemon_abilities
+                    group by pokemon_id
                 )
             GROUP BY LOWER(name)
             )
@@ -158,11 +158,11 @@ class CleanPokemon:
                     WHERE id in (
                         SELECT ability_id FROM 
                         trainer_pokemon_abilities
+                        group by ability_id 
                     )
                 GROUP BY LOWER(name)
                 )
                 """
-
 
         # Trainers deletion
         if self.table_name == "trainers" :
@@ -174,6 +174,7 @@ class CleanPokemon:
                     WHERE id in (
                         SELECT trainer_id FROM 
                         trainer_pokemon_abilities
+                        group by trainer_id 
                     )
                 GROUP BY LOWER(name)
                 )
@@ -372,12 +373,10 @@ def clean_database(conn: sqlite3.Connection):
             if db_table == "types" :
                 cleaned_data.correct_spelling(get_pokemon_abilities())    
 
-            cleaned_data.standardise_case()
-                
-            cleaned_data.delete_duplicates()
-                
 
-            conn.commit()
+            cleaned_data.standardise_case()
+            cleaned_data.delete_duplicates()
+             
         # --- End Implementation ---
         print("Database cleaning finished and changes committed.")
 
